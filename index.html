@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#ff6b6b">
+    <meta name="description" content="记录我们的美好时光">
+    <title>情侣日常记录</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="manifest" href="manifest.json">
+    <!-- PWA相关图标 -->
+    <link rel="apple-touch-icon" href="images/icon-192x192.png">
+    <link rel="icon" href="images/icon-192x192.png">
+</head>
+<body>
+    <!-- 登录模态框 -->
+    <div id="login-modal" class="modal show">
+        <div class="modal-content">
+            <h3>💖 欢迎来到我们的小天地 💖</h3>
+            <form id="login-form">
+                <div class="form-group">
+                    <label for="login-code">登录口令：</label>
+                    <input type="password" id="login-code" name="code" placeholder="输入登录口令" required>
+                </div>
+                <button type="submit" class="btn-primary">登录</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- 用户信息显示 -->
+    <div id="user-info" class="user-info" style="display: none;">
+        <div style="width: 100%; display: flex; justify-content: space-between; align-items: center;">
+            <span id="current-user" class="current-user"></span>
+            <div style="display: flex; gap: 1rem;">
+                <button id="settings-btn" class="btn-primary" style="background: #6c757d;">⚙️ 登录设置</button>
+                <button id="logout-btn" class="logout-btn">退出登录</button>
+            </div>
+        </div>
+        <div style="width: 100%; text-align: center; font-weight: 600; color: #ff6b6b;">
+            <span id="together-days" class="together-days"></span>
+        </div>
+    </div>
+
+    <!-- 设置模态框 -->
+    <div id="settings-modal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h3>⚙️ 账号设置</h3>
+            <form id="settings-form">
+                <div class="form-group">
+                    <label for="new-nickname">新昵称：</label>
+                    <input type="text" id="new-nickname" name="new-nickname" placeholder="输入新昵称">
+                </div>
+                <div class="form-group">
+                    <label for="new-password">新密码：</label>
+                    <input type="password" id="new-password" name="new-password" placeholder="输入新密码">
+                </div>
+                <button type="submit" class="btn-primary">保存设置</button>
+            </form>
+        </div>
+    </div>
+
+    <header>
+        <h1>💖 点点滴滴 💖</h1>
+        <nav>
+            <ul>
+                <li><a href="#notes" class="nav-link active">📝 日常笔记</a></li>
+                <li><a href="#albums" class="nav-link">📸 相册集</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <main>
+        <!-- 日常笔记区域 -->
+        <section id="notes" class="section active">
+            <div class="section-header">
+                <h2>📝 日常笔记</h2>
+                <button id="add-note-btn" class="btn-primary">+ 添加笔记</button>
+            </div>
+            
+            <!-- 添加笔记模态框 -->
+            <div id="note-modal" class="modal">
+                <div class="modal-content">
+                    <span class="close">&times;</span>
+                    <h3>添加新笔记</h3>
+                    <form id="note-form">
+                        <div class="form-group">
+                            <label for="note-title">标题：</label>
+                            <input type="text" id="note-title" name="title" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="note-content">内容：</label>
+                            <div class="editor-toolbar">
+                                <button type="button" class="editor-btn" onclick="insertImage()">📷 插入图片</button>
+                                <button type="button" class="editor-btn" onclick="insertVideo()">🎥 插入视频</button>
+                            </div>
+                            <div id="note-content" class="editor-content" contenteditable="true" placeholder="开始编写你的笔记..."></div>
+                            <input type="file" id="insert-image-input" name="insert-image" style="display: none;" accept="image/*">
+                            <input type="file" id="insert-video-input" name="insert-video" style="display: none;" accept="video/*">
+                        </div>
+                        <button type="submit" class="btn-primary">发布笔记</button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- 笔记列表 -->
+            <div id="notes-container" class="notes-container">
+                <!-- 笔记将通过JavaScript动态添加 -->
+            </div>
+        </section>
+
+        <!-- 相册集区域 -->
+        <section id="albums" class="section">
+            <div class="section-header">
+                <h2>📸 相册集</h2>
+                <button id="add-album-btn" class="btn-primary">+ 创建相册</button>
+            </div>
+            
+            <!-- 创建相册模态框 -->
+            <div id="album-modal" class="modal">
+                <div class="modal-content">
+                    <span class="close">&times;</span>
+                    <h3>创建新相册</h3>
+                    <form id="album-form">
+                        <div class="form-group">
+                            <label for="album-name">相册名称：</label>
+                            <input type="text" id="album-name" name="name" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="album-description">描述：</label>
+                            <textarea id="album-description" name="description" rows="3"></textarea>
+                        </div>
+                        <button type="submit" class="btn-primary">创建相册</button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- 相册列表 -->
+            <div id="albums-container" class="albums-container">
+                <!-- 相册将通过JavaScript动态添加 -->
+            </div>
+
+            <!-- 相册详情模态框 -->
+            <div id="album-detail-modal" class="modal">
+                <div class="modal-content album-detail">
+                    <span class="close">&times;</span>
+                    <div id="album-detail-content">
+                        <!-- 相册详情将通过JavaScript动态添加 -->
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 从笔记导入图片模态框 -->
+            <div id="import-modal" class="modal">
+                <div class="modal-content">
+                    <span class="close">&times;</span>
+                    <h3>从笔记导入图片</h3>
+                    <div id="import-content">
+                        <!-- 导入内容将通过JavaScript动态添加 -->
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- 完整笔记模态框 -->
+    <div id="full-note-modal" class="full-note-modal">
+        <div class="full-note-content">
+            <button class="close-full-note">&times;</button>
+            <div class="full-note-header">
+                <h2 class="full-note-title"></h2>
+                <p class="full-note-meta"></p>
+            </div>
+            <div class="full-note-body"></div>
+            <div class="comments-section" style="padding: 0 2rem 2rem;">
+                <!-- 留言区域将通过JavaScript动态添加 -->
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <p>&copy;我们的小确幸 | 记录每一个美好瞬间</p>
+    </footer>
+
+    <!-- Service Worker注册 -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('service-worker.js')
+                    .then((registration) => {
+                        console.log('Service Worker registered with scope:', registration.scope);
+                    })
+                    .catch((error) => {
+                        console.log('Service Worker registration failed:', error);
+                    });
+            });
+        }
+    </script>
+    
+    <script src="js/script.js"></script>
+</body>
+</html>

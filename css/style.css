@@ -1,0 +1,1243 @@
+/* 全局样式重置 */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    color: #333;
+    line-height: 1.6;
+    min-height: 100vh;
+    overflow-x: hidden;
+}
+
+/* 用户信息样式 */
+.user-info {
+    background: white;
+    padding: 0.5rem 1rem;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    position: sticky;
+    top: 0;
+    z-index: 1001;
+    transition: transform 0.3s ease;
+    height: auto;
+    min-height: 70px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.user-info.hidden {
+    transform: translateY(-100%);
+}
+
+.current-user {
+    font-weight: 600;
+    color: #ff6b6b;
+    margin-right: 1rem;
+}
+
+.logout-btn {
+    background: #6c757d;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.logout-btn:hover {
+    background: #5a6268;
+    transform: translateY(-1px);
+}
+
+/* 头部样式 */
+header {
+    background: linear-gradient(135deg, #ff6b6b, #ee5a6f);
+    color: white;
+    padding: 1rem 0;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+    transition: top 0.3s ease;
+}
+
+/* 当用户信息栏显示时，调整头部位置到用户信息栏下方 */
+body:not(.user-info-hidden) header {
+    top: auto;
+    top: 70px;
+}
+
+header h1 {
+    text-align: center;
+    font-size: 2rem;
+    margin-bottom: 1rem;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+nav ul {
+    display: flex;
+    justify-content: center;
+    list-style: none;
+    gap: 2rem;
+}
+
+nav a {
+    color: white;
+    text-decoration: none;
+    font-size: 1.1rem;
+    padding: 0.5rem 1rem;
+    border-radius: 25px;
+    transition: all 0.3s ease;
+    font-weight: 500;
+}
+
+nav a:hover, nav a.active {
+    background: rgba(255, 255, 255, 0.2);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* 主要内容区域 */
+main {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 1rem;
+}
+
+.section {
+    display: none;
+    animation: fadeIn 0.5s ease-in;
+}
+
+.section.active {
+    display: block;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+    border-bottom: 2px solid #e0e0e0;
+}
+
+.section-header h2 {
+    font-size: 1.8rem;
+    color: #333;
+}
+
+/* 按钮样式 */
+.btn-primary {
+    background: linear-gradient(135deg, #ff6b6b, #ee5a6f);
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 25px;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+.btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(255, 107, 107, 0.3);
+}
+
+/* 模态框样式 */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 2000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    animation: fadeIn 0.3s ease;
+}
+
+.modal.show {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.modal-content {
+    background: white;
+    padding: 2rem;
+    border-radius: 15px;
+    width: 90%;
+    max-width: 500px;
+    position: relative;
+    animation: slideIn 0.3s ease;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+}
+
+@keyframes slideIn {
+    from { transform: translateY(-50px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+.close {
+    position: absolute;
+    right: 1rem;
+    top: 1rem;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: #999;
+    transition: color 0.3s ease;
+}
+
+.close:hover {
+    color: #333;
+}
+
+/* 表单样式 */
+.form-group {
+    margin-bottom: 1.5rem;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+    color: #555;
+    font-size: 0.95rem;
+}
+
+.form-group input,
+.form-group textarea {
+    width: 100%;
+    padding: 0.75rem;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    font-size: 1rem;
+    transition: border-color 0.3s ease;
+    font-family: inherit;
+}
+
+.form-group input:focus,
+.form-group textarea:focus {
+    outline: none;
+    border-color: #ff6b6b;
+    box-shadow: 0 0 0 3px rgba(255, 107, 107, 0.1);
+}
+
+.form-group textarea {
+    resize: vertical;
+    min-height: 100px;
+}
+
+/* 编辑器样式 */
+.editor-toolbar {
+    background: #f8f9fa;
+    padding: 0.75rem;
+    border-radius: 8px 8px 0 0;
+    border: 2px solid #e0e0e0;
+    border-bottom: none;
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.editor-btn {
+    background: white;
+    color: #333;
+    border: 1px solid #e0e0e0;
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.editor-btn:hover {
+    background: #ff6b6b;
+    color: white;
+    border-color: #ff6b6b;
+    transform: translateY(-1px);
+}
+
+.editor-content {
+    width: 100%;
+    min-height: 200px;
+    padding: 1rem;
+    border: 2px solid #e0e0e0;
+    border-radius: 0 0 8px 8px;
+    font-size: 1rem;
+    line-height: 1.8;
+    background: white;
+    outline: none;
+    resize: vertical;
+    overflow-y: auto;
+    font-family: inherit;
+}
+
+.editor-content:focus {
+    border-color: #ff6b6b;
+    box-shadow: 0 0 0 3px rgba(255, 107, 107, 0.1);
+}
+
+.editor-content:empty:before {
+    content: attr(placeholder);
+    color: #999;
+    pointer-events: none;
+}
+
+/* 编辑器内容样式 */
+.editor-content img,
+.editor-content video {
+    max-width: 100%;
+    max-height: 400px;
+    height: auto;
+    display: block;
+    margin: 1rem auto;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    object-fit: contain;
+}
+
+/* 笔记卡片中的媒体样式 */
+.note-card .note-content img,
+.note-card .note-content video {
+    max-width: 100%;
+    max-height: 300px;
+    height: auto;
+    display: block;
+    margin: 1rem auto;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    object-fit: cover;
+}
+
+/* 模态框内容滚动样式 */
+.modal-content {
+    max-height: 90vh;
+    overflow-y: auto;
+    padding-right: 1rem;
+}
+
+/* 修复模态框滚动条导致的内容偏移 */
+.modal.show {
+    padding-right: 0 !important;
+}
+
+.editor-content p {
+    margin-bottom: 1rem;
+}
+
+.editor-content h1,
+.editor-content h2,
+.editor-content h3 {
+    margin: 1.5rem 0 1rem;
+    color: #333;
+}
+
+/* 导入图片模态框样式 */
+#import-content {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.note-item {
+    background: #f9f9f9;
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+}
+
+.note-item h4 {
+    margin-bottom: 0.5rem;
+    color: #333;
+}
+
+.note-item p {
+    margin-bottom: 1rem;
+    color: #666;
+    font-size: 0.9rem;
+}
+
+.note-media-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 0.5rem;
+    margin-top: 1rem;
+}
+
+.note-media-item {
+    position: relative;
+    border-radius: 4px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform 0.3s ease;
+}
+
+.note-media-item:hover {
+    transform: scale(1.05);
+}
+
+.note-media-item img,
+.note-media-item video {
+    width: 100%;
+    height: 80px;
+    object-fit: cover;
+    display: block;
+}
+
+.note-media-item input[type="checkbox"] {
+    position: absolute;
+    top: 0.25rem;
+    left: 0.25rem;
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+    z-index: 10;
+}
+
+/* 笔记容器和卡片样式 */
+.notes-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 2rem;
+}
+
+.note-card {
+    background: white;
+    border-radius: 15px;
+    overflow: hidden;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.08);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    border: 1px solid #f0f0f0;
+    position: relative;
+    cursor: pointer;
+    max-height: 450px;
+    display: flex;
+    flex-direction: column;
+}
+
+.note-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+}
+
+/* 笔记封面样式 */
+.note-cover {
+    width: 100%;
+    height: 200px;
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 3rem;
+    color: white;
+    position: relative;
+    overflow: hidden;
+}
+
+.note-cover img,
+.note-cover video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    position: absolute;
+    top: 0;
+    left: 0;
+}
+
+/* 笔记卡片内容样式 */
+.note-card-content {
+    padding: 1.5rem;
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.note-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+    position: relative;
+    z-index: 1;
+}
+
+.note-title {
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 0.5rem;
+    word-break: break-word;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* 笔记摘要样式 */
+.note-excerpt {
+    color: #666;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    margin-bottom: 1rem;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* 删除笔记按钮样式 */
+.delete-note-btn {
+    background: rgba(220, 53, 69, 0.9);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 1rem;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 2;
+}
+
+.delete-note-btn:hover {
+    background: #c82333;
+    transform: scale(1.1);
+    box-shadow: 0 2px 8px rgba(220, 53, 69, 0.3);
+}
+
+/* 笔记元信息样式 */
+.note-meta {
+    font-size: 0.85rem;
+    color: #6c757d;
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-top: auto;
+}
+
+.note-author {
+    font-weight: 500;
+    color: #ff6b6b;
+}
+
+.note-date {
+    color: #999;
+}
+
+/* 完整笔记样式 */
+.full-note-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    z-index: 4000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow-y: auto;
+    padding: 2rem;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+
+.full-note-modal.active {
+    opacity: 1;
+    visibility: visible;
+}
+
+.full-note-content {
+    background: white;
+    border-radius: 15px;
+    max-width: 900px;
+    width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
+    position: relative;
+    animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+    from { transform: translateY(30px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+.full-note-header {
+    padding: 2rem;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.full-note-title {
+    font-size: 2rem;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 1rem;
+}
+
+.full-note-meta {
+    font-size: 1rem;
+    color: #6c757d;
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+}
+
+.full-note-body {
+    padding: 2rem;
+    line-height: 1.8;
+    color: #333;
+}
+
+.full-note-body img,
+.full-note-body video {
+    max-width: 100%;
+    max-height: 300px;
+    height: auto;
+    display: block;
+    margin: 1rem auto;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    object-fit: contain;
+}
+
+.close-full-note {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    background: rgba(0, 0, 0, 0.5);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    font-size: 1.5rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    z-index: 5000;
+}
+
+.close-full-note:hover {
+    background: rgba(0, 0, 0, 0.8);
+    transform: rotate(90deg);
+}
+
+/* 笔记内容样式 */
+.note-content {
+    color: #666;
+    margin-bottom: 1rem;
+    line-height: 1.6;
+}
+
+/* 关闭按钮通用样式 */
+.close-btn {
+    background: #6c757d;
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 35px;
+    height: 35px;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.close-btn:hover {
+    background: #5a6268;
+    transform: rotate(90deg);
+}
+
+.note-media {
+    margin: 1rem 0;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.note-media img,
+.note-media video {
+    width: 100%;
+    height: auto;
+    display: block;
+    transition: transform 0.3s ease;
+}
+
+.note-media img:hover,
+.note-media video:hover {
+    transform: scale(1.05);
+}
+
+/* 留言区域样式 */
+.comments-section {
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid #f0f0f0;
+}
+
+.comments-section h4 {
+    margin-bottom: 1rem;
+    color: #555;
+}
+
+.comment {
+    background: #f9f9f9;
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+    border-left: 3px solid #ff6b6b;
+}
+
+.comment.reply {
+    background: #f0f0f0;
+    border-left: 3px solid #6c757d;
+    margin-top: 0.5rem;
+    padding: 0.75rem;
+}
+
+.comment-author {
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 0.5rem;
+    font-size: 0.95rem;
+}
+
+.comment-content {
+    color: #666;
+    margin-bottom: 0.5rem;
+    line-height: 1.5;
+}
+
+.comment-date {
+    font-size: 0.8rem;
+    color: #999;
+    text-align: right;
+}
+
+/* 留言按钮样式 */
+.comment-btn {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-size: 0.8rem;
+    padding: 0.25rem;
+    border-radius: 50%;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+}
+
+.comment-btn:hover {
+    background: rgba(0, 0, 0, 0.1);
+    transform: scale(1.1);
+}
+
+.reply-btn:hover {
+    background: rgba(255, 107, 107, 0.1);
+    color: #ff6b6b;
+}
+
+.delete-btn:hover {
+    background: rgba(220, 53, 69, 0.1);
+    color: #dc3545;
+}
+
+/* 回复区域样式 */
+.comment-replies {
+    margin-left: 1.5rem;
+    margin-top: 0.5rem;
+}
+
+/* 回复输入区域样式 */
+#reply-to {
+    background: #f8f9fa;
+    padding: 0.5rem;
+    border-radius: 5px;
+    font-size: 0.9rem;
+    color: #6c757d;
+    margin-bottom: 0.5rem;
+}
+
+/* 取消回复按钮样式 */
+#cancel-reply {
+    background: #6c757d;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+#cancel-reply:hover {
+    background: #5a6268;
+    transform: translateY(-1px);
+}
+
+.add-comment {
+    margin-top: 1rem;
+}
+
+.add-comment textarea {
+    width: 100%;
+    padding: 0.75rem;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    font-size: 1rem;
+    margin-bottom: 1rem;
+    resize: vertical;
+    min-height: 80px;
+}
+
+/* 相册样式 */
+.albums-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 2rem;
+}
+
+.album-card {
+    background: white;
+    border-radius: 15px;
+    overflow: hidden;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.08);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    cursor: pointer;
+}
+
+.album-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+}
+
+.album-cover {
+    height: 200px;
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 3rem;
+    color: white;
+}
+
+.album-info {
+    padding: 1.5rem;
+}
+
+.album-name {
+    font-size: 1.3rem;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 0.5rem;
+}
+
+.album-description {
+    color: #666;
+    margin-bottom: 1rem;
+    font-size: 0.95rem;
+}
+
+.album-stats {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: #999;
+    font-size: 0.9rem;
+}
+
+/* 相册详情样式 */
+.album-detail {
+    max-width: 800px;
+}
+
+.album-detail-header {
+    text-align: center;
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+    border-bottom: 2px solid #e0e0e0;
+}
+
+.album-detail-header h3 {
+    font-size: 1.8rem;
+    color: #333;
+    margin-bottom: 0.5rem;
+}
+
+.album-detail-header p {
+    color: #666;
+}
+
+.media-upload {
+    margin-bottom: 2rem;
+    padding: 1.5rem;
+    background: #f9f9f9;
+    border-radius: 10px;
+    text-align: center;
+}
+
+.media-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.media-item {
+    position: relative;
+    border-radius: 8px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform 0.3s ease;
+}
+
+.media-item:hover {
+    transform: scale(1.05);
+}
+
+.media-item img,
+.media-item video {
+    width: 100%;
+    height: 150px;
+    object-fit: cover;
+    display: block;
+}
+
+.media-item .delete-media {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    background: rgba(0, 0, 0, 0.6);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 25px;
+    height: 25px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.media-item:hover .delete-media {
+    opacity: 1;
+}
+
+/* 页脚样式 */
+footer {
+    text-align: center;
+    padding: 2rem;
+    background: #333;
+    color: white;
+    margin-top: 2rem;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+    /* 全局调整 */
+    body {
+        font-size: 16px;
+    }
+    
+    /* 主要内容区域 */
+    main {
+        padding: 0.5rem;
+    }
+    
+    /* 头部和导航 */
+    header {
+        padding: 0.8rem 0;
+    }
+    
+    header h1 {
+        font-size: 1.5rem;
+        margin-bottom: 0.8rem;
+    }
+    
+    nav ul {
+        gap: 0.5rem;
+        flex-wrap: wrap;
+    }
+    
+    nav a {
+        font-size: 0.9rem;
+        padding: 0.5rem 0.8rem;
+        border-radius: 20px;
+    }
+    
+    /* 用户信息栏 */
+    .user-info {
+        padding: 0.5rem;
+        gap: 0.3rem;
+        min-height: auto;
+    }
+    
+    .user-info > div {
+        flex-direction: column;
+        gap: 0.5rem;
+        align-items: center;
+        text-align: center;
+    }
+    
+    .current-user {
+        margin-right: 0;
+        font-size: 0.9rem;
+    }
+    
+    #settings-btn {
+        font-size: 0.8rem;
+        padding: 0.4rem 0.8rem;
+    }
+    
+    .logout-btn {
+        font-size: 0.8rem;
+        padding: 0.4rem 0.8rem;
+    }
+    
+    #together-days {
+        font-size: 0.9rem;
+    }
+    
+    /* 区块头部 */
+    .section-header {
+        flex-direction: column;
+        gap: 1rem;
+        text-align: center;
+        margin-bottom: 1.5rem;
+    }
+    
+    .section-header h2 {
+        font-size: 1.5rem;
+    }
+    
+    .btn-primary {
+        font-size: 0.9rem;
+        padding: 0.6rem 1.2rem;
+    }
+    
+    /* 卡片布局 */
+    .notes-container,
+    .albums-container {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+    
+    .note-card,
+    .album-card {
+        margin: 0;
+    }
+    
+    .note-cover,
+    .album-cover {
+        height: 150px;
+    }
+    
+    .note-card-content,
+    .album-info {
+        padding: 1rem;
+    }
+    
+    .note-title {
+        font-size: 1.1rem;
+    }
+    
+    /* 模态框 */
+    .modal-content {
+        width: 95%;
+        margin: 1rem;
+        padding: 1.5rem;
+    }
+    
+    .modal-content h3 {
+        font-size: 1.3rem;
+        margin-bottom: 1rem;
+    }
+    
+    /* 表单元素 */
+    .form-group {
+        margin-bottom: 1.2rem;
+    }
+    
+    .form-group input,
+    .form-group textarea {
+        padding: 0.6rem;
+        font-size: 0.9rem;
+    }
+    
+    /* 编辑器 */
+    .editor-toolbar {
+        padding: 0.5rem;
+        gap: 0.3rem;
+    }
+    
+    .editor-btn {
+        font-size: 0.8rem;
+        padding: 0.4rem 0.8rem;
+    }
+    
+    .editor-content {
+        min-height: 150px;
+        padding: 0.8rem;
+    }
+    
+    /* 留言系统 */
+    .comment {
+        padding: 0.8rem;
+    }
+    
+    .comment.reply {
+        padding: 0.6rem;
+    }
+    
+    .comment-replies {
+        margin-left: 1rem;
+    }
+    
+    .add-comment textarea {
+        padding: 0.6rem;
+        font-size: 0.9rem;
+        min-height: 70px;
+    }
+    
+    /* 相册详情 */
+    .media-upload {
+        padding: 1rem;
+    }
+    
+    .media-grid {
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+        gap: 0.5rem;
+    }
+    
+    .media-item {
+        height: 120px;
+    }
+    
+    /* 完整笔记模态框 */
+    .full-note-modal {
+        padding: 0.5rem;
+    }
+    
+    .full-note-content {
+        padding: 0;
+    }
+    
+    .full-note-header,
+    .full-note-body {
+        padding: 1.5rem;
+    }
+    
+    .full-note-title {
+        font-size: 1.5rem;
+    }
+    
+    /* 媒体查看器 */
+    .media-viewer-content {
+        max-width: 95%;
+        max-height: 95%;
+    }
+}
+
+/* 针对小屏手机的额外优化 */
+@media (max-width: 480px) {
+    header h1 {
+        font-size: 1.3rem;
+    }
+    
+    nav a {
+        font-size: 0.85rem;
+        padding: 0.4rem 0.6rem;
+    }
+    
+    .note-cover,
+    .album-cover {
+        height: 120px;
+    }
+    
+    .modal-content {
+        padding: 1rem;
+    }
+}
+
+/* 媒体查看器样式 */
+.media-viewer {
+    display: none;
+    position: fixed;
+    z-index: 3000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.9);
+    justify-content: center;
+    align-items: center;
+}
+
+.media-viewer.active {
+    display: flex;
+}
+
+.media-viewer-content {
+    max-width: 90%;
+    max-height: 90%;
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.media-viewer-content img,
+.media-viewer-content video {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+
+/* 加载动画 */
+.loading {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 3px solid rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    border-top-color: white;
+    animation: spin 1s ease-in-out infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
