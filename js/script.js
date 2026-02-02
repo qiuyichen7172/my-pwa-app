@@ -440,9 +440,29 @@ function handleInsertMedia(file, type) {
         const content = e.target.result;
         const editor = document.getElementById('note-content');
         
-        // 在光标位置插入媒体
+        // 确保焦点在内容区域
+        editor.focus();
+        
+        // 在内容区域内插入媒体
         const selection = window.getSelection();
-        const range = selection.getRangeAt(0);
+        let range;
+        
+        try {
+            // 尝试获取当前范围
+            range = selection.getRangeAt(0);
+            // 检查当前范围是否在编辑器内
+            if (!editor.contains(range.commonAncestorContainer)) {
+                // 如果不在编辑器内，创建一个新的范围在编辑器末尾
+                range = document.createRange();
+                range.selectNodeContents(editor);
+                range.collapse(false);
+            }
+        } catch (error) {
+            // 如果无法获取范围，创建一个新的范围在编辑器末尾
+            range = document.createRange();
+            range.selectNodeContents(editor);
+            range.collapse(false);
+        }
         
         if (type === 'image') {
             const img = document.createElement('img');
@@ -467,7 +487,8 @@ function handleInsertMedia(file, type) {
         }
         
         // 移动光标到媒体后面
-        range.setStartAfter(img || video);
+        const insertedMedia = type === 'image' ? img : video;
+        range.setStartAfter(insertedMedia);
         range.collapse(true);
         selection.removeAllRanges();
         selection.addRange(range);
