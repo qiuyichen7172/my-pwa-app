@@ -475,14 +475,21 @@ function addNote() {
 
 // 渲染笔记列表
 function renderNotes() {
+    console.log('renderNotes called, notesData:', notesData);
     const notesContainer = document.getElementById('notes-container');
     
-    if (notesData.length === 0) {
-        notesContainer.innerHTML = '<p style="text-align: center; color: #999; grid-column: 1 / -1;">还没有笔记，快来添加第一条吧！</p>';
+    if (!notesContainer) {
+        console.error('notes-container element not found');
         return;
     }
     
-    notesContainer.innerHTML = notesData.map(note => {
+    if (notesData.length === 0) {
+        notesContainer.innerHTML = '<p style="text-align: center; color: #999; grid-column: 1 / -1; padding: 2rem; font-size: 1.2rem;">还没有笔记，快来添加第一条吧！</p>';
+        return;
+    }
+    
+    console.log('Rendering', notesData.length, 'notes');
+    const notesHtml = notesData.map(note => {
         // 提取笔记中的第一张图片作为封面
         const tempDiv = document.createElement('div');
         tempDiv.innerHTML = note.content;
@@ -522,6 +529,9 @@ function renderNotes() {
             </div>
         `;
     }).join('');
+    
+    console.log('Generated notes HTML:', notesHtml);
+    notesContainer.innerHTML = notesHtml;
 }
 
 // 打开完整笔记
