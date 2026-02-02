@@ -77,6 +77,10 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // 添加滚动事件监听器
     window.addEventListener('scroll', handleScroll);
+    
+    // 渲染笔记和相册列表
+    renderNotes();
+    renderAlbums();
 });
 
 // 处理滚动事件，控制用户信息栏显示/隐藏
@@ -883,8 +887,8 @@ function renderAlbumDetail() {
         
         <div class="media-upload">
             <h4>📤 上传媒体</h4>
-            <input type="file" id="album-media" name="media" multiple accept="image/*,video/*">
-            <button class="btn-primary" onclick="uploadAlbumMedia()">上传到相册</button>
+            <input type="file" id="album-media" name="media" multiple accept="image/*,video/*" style="display: none;">
+            <button class="btn-primary" onclick="document.getElementById('album-media').click()">从手机上传</button>
             <button class="btn-primary" style="margin-left: 0.5rem; background: #28a745;" onclick="openImportModal()">📝 从笔记导入</button>
         </div>
         
@@ -1012,8 +1016,8 @@ function renderAlbumDetail() {
         
         <div class="media-upload">
             <h4>📤 上传媒体</h4>
-            <input type="file" id="album-media" name="media" multiple accept="image/*,video/*">
-            <button class="btn-primary" onclick="uploadAlbumMedia()">上传到相册</button>
+            <input type="file" id="album-media" name="media" multiple accept="image/*,video/*" style="display: none;">
+            <button class="btn-primary" onclick="document.getElementById('album-media').click()">从手机上传</button>
             <button class="btn-primary" style="margin-left: 0.5rem; background: #28a745;" onclick="openImportModal()">📝 从笔记导入</button>
         </div>
         

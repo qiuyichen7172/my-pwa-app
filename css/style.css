@@ -319,14 +319,16 @@ main {
 
 /* 笔记卡片中的媒体样式 */
 .note-card .note-content img,
-.note-card .note-content video {
+.note-card .note-content video,
+.note-cover img,
+.note-cover video {
     max-width: 100%;
     max-height: 300px;
     height: auto;
     display: block;
-    margin: 1rem auto;
-    border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    margin: 0;
+    border-radius: 0;
+    box-shadow: none;
     object-fit: cover;
 }
 
