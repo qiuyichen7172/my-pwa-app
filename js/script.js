@@ -34,30 +34,63 @@ const USER_INFO_HEIGHT = 70; // 用户信息栏最小高度
 
 // 初始化数据
 function initData() {
-    // 从localStorage加载数据
-    notesData = JSON.parse(localStorage.getItem('notes')) || [];
-    albumsData = JSON.parse(localStorage.getItem('albums')) || [];
-    usersData = JSON.parse(localStorage.getItem('users')) || [];
+    console.log('[initData] 开始执行');
     
-    // 初始化默认用户数据（如果不存在）
-    if (usersData.length === 0) {
-        usersData = [
-            { id: 'user1', password: INITIAL_PASSWORDS.user1, nickname: DEFAULT_NICKNAMES.user1 },
-            { id: 'user2', password: INITIAL_PASSWORDS.user2, nickname: DEFAULT_NICKNAMES.user2 }
-        ];
-        localStorage.setItem('users', JSON.stringify(usersData));
-    }
-    
-    // 初始化默认笔记数据（如果不存在）
-    if (notesData.length === 0) {
+    try {
+        // 从localStorage加载数据
+        const storedNotes = localStorage.getItem('notes');
+        const storedAlbums = localStorage.getItem('albums');
+        const storedUsers = localStorage.getItem('users');
+        
+        console.log('[initData] localStorage数据:', { storedNotes, storedAlbums, storedUsers });
+        
+        // 安全解析localStorage数据
+        notesData = storedNotes ? JSON.parse(storedNotes) : [];
+        albumsData = storedAlbums ? JSON.parse(storedAlbums) : [];
+        usersData = storedUsers ? JSON.parse(storedUsers) : [];
+        
+        // 确保数据类型正确
+        notesData = Array.isArray(notesData) ? notesData : [];
+        albumsData = Array.isArray(albumsData) ? albumsData : [];
+        usersData = Array.isArray(usersData) ? usersData : [];
+        
+        // 初始化默认用户数据（如果不存在）
+        if (usersData.length === 0) {
+            console.log('[initData] 初始化默认用户数据');
+            usersData = [
+                { id: 'user1', password: INITIAL_PASSWORDS.user1, nickname: DEFAULT_NICKNAMES.user1 },
+                { id: 'user2', password: INITIAL_PASSWORDS.user2, nickname: DEFAULT_NICKNAMES.user2 }
+            ];
+            localStorage.setItem('users', JSON.stringify(usersData));
+        }
+        
+        // 初始化默认笔记数据（如果不存在）
+        if (notesData.length === 0) {
+            console.log('[initData] 初始化默认笔记数据');
+            notesData = [];
+            localStorage.setItem('notes', JSON.stringify(notesData));
+        }
+        
+        // 初始化默认相册数据（如果不存在）
+        if (albumsData.length === 0) {
+            console.log('[initData] 初始化默认相册数据');
+            albumsData = [];
+            localStorage.setItem('albums', JSON.stringify(albumsData));
+        }
+        
+        console.log('[initData] 初始化完成:', { 
+            notesCount: notesData.length, 
+            albumsCount: albumsData.length, 
+            usersCount: usersData.length 
+        });
+    } catch (error) {
+        console.error('[initData] 初始化数据时发生错误:', error);
+        // 重置所有数据
         notesData = [];
-        localStorage.setItem('notes', JSON.stringify(notesData));
-    }
-    
-    // 初始化默认相册数据（如果不存在）
-    if (albumsData.length === 0) {
         albumsData = [];
-        localStorage.setItem('albums', JSON.stringify(albumsData));
+        usersData = [];
+        localStorage.clear();
+        console.log('[initData] 已重置所有数据');
     }
 }
 
@@ -66,19 +99,19 @@ document.addEventListener('DOMContentLoaded', function() {
     // 初始化数据
     initData();
     
-    // 检查是否已登录
-    checkLogin();
-    
-    // 计算并显示在一起天数
-    updateTogetherDays();
-    
     // 绑定事件监听器
     bindEventListeners();
     
     // 添加滚动事件监听器
     window.addEventListener('scroll', handleScroll);
     
-    // 渲染笔记和相册列表
+    // 检查是否已登录
+    checkLogin();
+    
+    // 计算并显示在一起天数
+    updateTogetherDays();
+    
+    // 确保无论是否登录都渲染笔记和相册列表
     renderNotes();
     renderAlbums();
 });
@@ -245,6 +278,12 @@ function bindEventListeners() {
                 closeFullNote();
             }
         });
+    }
+    
+    // 相册媒体上传change事件
+    const albumMediaInput = document.getElementById('album-media');
+    if (albumMediaInput) {
+        albumMediaInput.addEventListener('change', uploadAlbumMedia);
     }
 }
 
@@ -475,63 +514,80 @@ function addNote() {
 
 // 渲染笔记列表
 function renderNotes() {
-    console.log('renderNotes called, notesData:', notesData);
+    console.log('[renderNotes] 开始执行');
+    console.log('[renderNotes] notesData:', notesData);
+    
+    // 确保notesData是数组
+    if (!Array.isArray(notesData)) {
+        console.error('[renderNotes] notesData不是数组，重置为空数组');
+        notesData = [];
+        localStorage.setItem('notes', JSON.stringify(notesData));
+    }
+    
     const notesContainer = document.getElementById('notes-container');
     
     if (!notesContainer) {
-        console.error('notes-container element not found');
+        console.error('[renderNotes] notes-container元素未找到');
         return;
     }
     
+    console.log('[renderNotes] 渲染', notesData.length, '条笔记');
+    
     if (notesData.length === 0) {
+        console.log('[renderNotes] 没有笔记可渲染，显示空状态');
         notesContainer.innerHTML = '<p style="text-align: center; color: #999; grid-column: 1 / -1; padding: 2rem; font-size: 1.2rem;">还没有笔记，快来添加第一条吧！</p>';
         return;
     }
     
-    console.log('Rendering', notesData.length, 'notes');
-    const notesHtml = notesData.map(note => {
-        // 提取笔记中的第一张图片作为封面
-        const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = note.content;
-        const firstImage = tempDiv.querySelector('img');
-        const firstVideo = tempDiv.querySelector('video');
-        const coverMedia = firstImage || firstVideo;
-        
-        // 生成笔记摘要
-        const textContent = tempDiv.textContent || tempDiv.innerText || '';
-        const excerpt = textContent.trim().substring(0, 100) + (textContent.length > 100 ? '...' : '');
-        
-        return `
-            <div class="note-card" data-id="${note.id}" onclick="openFullNote('${note.id}')">
-                <div class="note-cover">
-                    ${coverMedia ? `
-                        ${coverMedia.tagName === 'IMG' ? 
-                            `<img src="${coverMedia.src}" alt="笔记封面">` : 
-                            `<video src="${coverMedia.src}" muted loop playsinline></video>`}
-                    ` : '📝'}
-                </div>
-                <div class="note-card-content">
-                    <div>
-                        <div class="note-header">
-                            <h3 class="note-title">${note.title}</h3>
-                            <button class="delete-note-btn" onclick="event.stopPropagation(); deleteNote('${note.id}')" title="删除笔记">
-                                🗑️
-                            </button>
-                        </div>
-                        <p class="note-excerpt">${excerpt}</p>
+    try {
+        const notesHtml = notesData.map(note => {
+            // 提取笔记中的第一张图片作为封面
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = note.content || '';
+            const firstImage = tempDiv.querySelector('img');
+            const firstVideo = tempDiv.querySelector('video');
+            const coverMedia = firstImage || firstVideo;
+            
+            // 生成笔记摘要
+            const textContent = tempDiv.textContent || tempDiv.innerText || '';
+            const excerpt = textContent.trim().substring(0, 100) + (textContent.length > 100 ? '...' : '');
+            
+            return `
+                <div class="note-card" data-id="${note.id}" onclick="openFullNote('${note.id}')">
+                    <div class="note-cover">
+                        ${coverMedia ? `
+                            ${coverMedia.tagName === 'IMG' ? 
+                                `<img src="${coverMedia.src}" alt="笔记封面" style="max-width: 100%; max-height: 200px; height: auto; object-fit: cover;">` : 
+                                `<video src="${coverMedia.src}" muted loop playsinline style="max-width: 100%; max-height: 200px; height: auto; object-fit: cover;"></video>`}
+                        ` : '📝'}
                     </div>
-                    <p class="note-meta">
-                        <span class="note-author">✍️ ${note.author}</span>
-                        <span class="note-date">${formatDate(note.createdAt)}</span>
-                        <span class="note-comments">💬 ${note.comments ? note.comments.length : 0}</span>
-                    </p>
+                    <div class="note-card-content">
+                        <div>
+                            <div class="note-header">
+                                <h3 class="note-title">${note.title || '无标题'}</h3>
+                                <button class="delete-note-btn" onclick="event.stopPropagation(); deleteNote('${note.id}')" title="删除笔记">
+                                    🗑️
+                                </button>
+                            </div>
+                            <p class="note-excerpt">${excerpt}</p>
+                        </div>
+                        <p class="note-meta">
+                            <span class="note-author">✍️ ${note.author || '未知作者'}</span>
+                            <span class="note-date">${formatDate(note.createdAt)}</span>
+                            <span class="note-comments">💬 ${note.comments ? note.comments.length : 0}</span>
+                        </p>
+                    </div>
                 </div>
-            </div>
-        `;
-    }).join('');
-    
-    console.log('Generated notes HTML:', notesHtml);
-    notesContainer.innerHTML = notesHtml;
+            `;
+        }).join('');
+        
+        console.log('[renderNotes] 生成的HTML长度:', notesHtml.length);
+        notesContainer.innerHTML = notesHtml;
+        console.log('[renderNotes] 笔记渲染完成');
+    } catch (error) {
+        console.error('[renderNotes] 渲染过程中发生错误:', error);
+        notesContainer.innerHTML = '<p style="text-align: center; color: #ff6b6b; grid-column: 1 / -1; padding: 2rem; font-size: 1.2rem;">渲染笔记时发生错误，请刷新页面重试</p>';
+    }
 }
 
 // 打开完整笔记
