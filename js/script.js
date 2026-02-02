@@ -132,6 +132,9 @@ function checkLogin() {
         document.getElementById('user-info').style.display = 'block';
         document.getElementById('current-user').textContent = `欢迎，${currentUser.nickname} 💕`;
         updateTogetherDays();
+        // 登录后渲染笔记和相册列表
+        renderNotes();
+        renderAlbums();
     }
 }
 
@@ -406,12 +409,21 @@ function handleInsertMedia(file, type) {
             const img = document.createElement('img');
             img.src = content;
             img.alt = file.name;
+            // 添加样式类，确保图片大小合适
+            img.style.maxWidth = '100%';
+            img.style.maxHeight = '400px';
+            img.style.height = 'auto';
+            img.style.objectFit = 'contain';
             range.insertNode(img);
         } else if (type === 'video') {
             const video = document.createElement('video');
             video.src = content;
             video.controls = true;
             video.muted = false;
+            // 添加样式类，确保视频大小合适
+            video.style.maxWidth = '100%';
+            video.style.maxHeight = '400px';
+            video.style.height = 'auto';
             range.insertNode(video);
         }
         
