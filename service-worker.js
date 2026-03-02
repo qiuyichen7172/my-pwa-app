@@ -1,5 +1,5 @@
 // 缓存名称
-const CACHE_NAME = 'couple-notes-v2';
+const CACHE_NAME = 'couple-notes-v3';
 const urlsToCache = [
   '.',
   'index.html',
@@ -41,27 +41,59 @@ self.addEventListener('activate', (event) => {
 
 // 拦截网络请求
 self.addEventListener('fetch', (event) => {
-  // 优先从网络获取最新内容
+  const requestUrl = new URL(event.request.url);
+  
+  // API请求 - 优先使用网络，不缓存API响应
+  if (requestUrl.pathname.includes('/notes.json') || 
+      requestUrl.pathname.includes('/upload') ||
+      requestUrl.pathname.includes('/sync') ||
+      requestUrl.pathname.includes('/data') ||
+      requestUrl.pathname.includes('/ping')) {
+    event.respondWith(
+      fetch(event.request)
+        .catch(() => {
+          // API请求失败时，返回适当的错误响应
+          return new Response(JSON.stringify({ error: 'Network error' }), {
+            headers: { 'Content-Type': 'application/json' },
+            status: 503
+          });
+        })
+    );
+    return;
+  }
+  
+  // 静态资源 - 使用Cache First策略
   event.respondWith(
-    fetch(event.request)
+    caches.match(event.request)
       .then((response) => {
-        // 检查响应是否有效
-        if (!response || response.status !== 200 || response.type !== 'basic') {
+        // 如果缓存中有响应，直接返回
+        if (response) {
           return response;
         }
         
-        // 克隆响应，一份用于返回，一份用于缓存
-        const responseToCache = response.clone();
-        caches.open(CACHE_NAME)
-          .then((cache) => {
-            cache.put(event.request, responseToCache);
+        // 否则从网络获取
+        return fetch(event.request)
+          .then((response) => {
+            // 检查响应是否有效
+            if (!response || response.status !== 200 || response.type !== 'basic') {
+              return response;
+            }
+            
+            // 克隆响应，一份用于返回，一份用于缓存
+            const responseToCache = response.clone();
+            caches.open(CACHE_NAME)
+              .then((cache) => {
+                cache.put(event.request, responseToCache);
+              });
+            
+            return response;
+          })
+          .catch(() => {
+            // 网络请求失败，且缓存中没有响应
+            return new Response('Network error', {
+              status: 503
+            });
           });
-        
-        return response;
-      })
-      .catch(() => {
-        // 网络请求失败时，从缓存获取
-        return caches.match(event.request);
       })
   );
 });

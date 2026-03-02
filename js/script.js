@@ -1,6 +1,7 @@
 // 全局变量
 let currentAlbum = null;
 let currentUser = null;
+let syncManager = null;
 
 // 数据缓存
 let notesData = [];
@@ -31,6 +32,14 @@ const START_DATE = new Date('2025-02-16');
 // 全局变量
 let lastScrollTop = 0;
 const USER_INFO_HEIGHT = 70; // 用户信息栏最小高度
+const SYNC_INTERVAL = 60000; // 1分钟同步检查间隔
+
+// 同步相关配置
+const SYNC_CONFIG = {
+    pingTimeout: 5000, // 5秒超时
+    maxQueueSize: 1000, // 最大队列大小
+    retryDelay: 30000 // 30秒重试间隔
+};
 
 // 初始化数据
 function initData() {
@@ -41,18 +50,30 @@ function initData() {
         const storedNotes = localStorage.getItem('notes');
         const storedAlbums = localStorage.getItem('albums');
         const storedUsers = localStorage.getItem('users');
+        const storedSyncQueue = localStorage.getItem('syncQueue');
+        const storedDeviceId = localStorage.getItem('deviceId');
+        const storedServerUrl = localStorage.getItem('serverUrl');
+        const storedLastSync = localStorage.getItem('lastSync');
         
-        console.log('[initData] localStorage数据:', { storedNotes, storedAlbums, storedUsers });
+        console.log('[initData] localStorage数据:', { storedNotes, storedAlbums, storedUsers, storedSyncQueue, storedDeviceId, storedServerUrl, storedLastSync });
         
         // 安全解析localStorage数据
         notesData = storedNotes ? JSON.parse(storedNotes) : [];
         albumsData = storedAlbums ? JSON.parse(storedAlbums) : [];
         usersData = storedUsers ? JSON.parse(storedUsers) : [];
+        syncQueue = storedSyncQueue ? JSON.parse(storedSyncQueue) : [];
+        serverUrl = storedServerUrl || '';
+        lastSync = storedLastSync || '';
+        
+        // 生成或加载设备ID
+        deviceId = storedDeviceId || generateDeviceId();
+        localStorage.setItem('deviceId', deviceId);
         
         // 确保数据类型正确
         notesData = Array.isArray(notesData) ? notesData : [];
         albumsData = Array.isArray(albumsData) ? albumsData : [];
         usersData = Array.isArray(usersData) ? usersData : [];
+        syncQueue = Array.isArray(syncQueue) ? syncQueue : [];
         
         // 初始化默认用户数据（如果不存在）
         if (usersData.length === 0) {
@@ -81,7 +102,11 @@ function initData() {
         console.log('[initData] 初始化完成:', { 
             notesCount: notesData.length, 
             albumsCount: albumsData.length, 
-            usersCount: usersData.length 
+            usersCount: usersData.length,
+            syncQueueCount: syncQueue.length,
+            deviceId: deviceId,
+            serverUrl: serverUrl,
+            lastSync: lastSync
         });
     } catch (error) {
         console.error('[initData] 初始化数据时发生错误:', error);
@@ -89,15 +114,723 @@ function initData() {
         notesData = [];
         albumsData = [];
         usersData = [];
+        syncQueue = [];
         localStorage.clear();
+        deviceId = generateDeviceId();
+        localStorage.setItem('deviceId', deviceId);
         console.log('[initData] 已重置所有数据');
     }
+}
+
+// 生成设备ID
+function generateDeviceId() {
+    return 'device-' + Date.now().toString() + '-' + Math.random().toString(36).substr(2, 9);
+}
+
+// 生成唯一ID
+function generateId() {
+    return Date.now().toString() + '-' + Math.random().toString(36).substr(2, 9);
+}
+
+// 格式化日期
+function formatDate(dateString) {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    return date.toLocaleString('zh-CN', { 
+        year: 'numeric', 
+        month: '2-digit', 
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}
+
+// SyncManager类
+class SyncManager {
+    constructor() {
+        this.syncQueue = JSON.parse(localStorage.getItem('syncQueue')) || [];
+        this.deviceId = localStorage.getItem('deviceId') || generateDeviceId();
+        this.serverUrl = localStorage.getItem('serverUrl') || 'https://pwa.diandiandidi.vip';
+        this.lastSync = localStorage.getItem('lastSync') || '';
+        
+        // 保存设备ID到localStorage
+        localStorage.setItem('deviceId', this.deviceId);
+        
+        // 绑定事件监听器
+        this.bindEventListeners();
+        
+        console.log('[SyncManager] 初始化完成:', { 
+            deviceId: this.deviceId, 
+            serverUrl: this.serverUrl, 
+            queueLength: this.syncQueue.length 
+        });
+    }
+    
+    // 绑定事件监听器
+    bindEventListeners() {
+        // 网络状态变化监听
+        window.addEventListener('online', () => {
+            console.log('[SyncManager] 检测到网络连接，开始同步');
+            this.syncToServer();
+        });
+        
+        window.addEventListener('offline', () => {
+            console.log('[SyncManager] 检测到网络断开');
+        });
+    }
+    
+    // 添加到同步队列
+    addToQueue(note) {
+        console.log('[addToQueue] 添加到同步队列:', note.id);
+        
+        // 检查队列大小
+        if (this.syncQueue.length >= SYNC_CONFIG.maxQueueSize) {
+            console.warn('[addToQueue] 同步队列已满，移除最旧的记录');
+            this.syncQueue.shift();
+        }
+        
+        // 创建同步记录
+        const syncItem = {
+            id: generateId(),
+            type: 'update',
+            dataType: 'note',
+            data: note,
+            timestamp: new Date().toISOString(),
+            deviceId: this.deviceId
+        };
+        
+        // 添加到队列
+        this.syncQueue.push(syncItem);
+        
+        // 保存到localStorage
+        localStorage.setItem('syncQueue', JSON.stringify(this.syncQueue));
+        
+        console.log('[addToQueue] 同步记录添加成功，队列长度:', this.syncQueue.length);
+        
+        // 如果在线，立即尝试同步
+        if (navigator.onLine) {
+            this.syncToServer();
+        }
+    }
+    
+    // 同步到服务器
+    async syncToServer() {
+        console.log('[syncToServer] 开始同步到服务器');
+        
+        // 显示同步状态
+        this.showSyncStatus('正在同步...', '🔄', '#28a745');
+        
+        // 检查网络连接
+        if (!navigator.onLine) {
+            console.log('[syncToServer] 网络未连接，跳过同步');
+            this.hideSyncStatus();
+            return false;
+        }
+        
+        // 检查服务器URL
+        if (!this.serverUrl) {
+            console.log('[syncToServer] 服务器URL未配置');
+            this.hideSyncStatus();
+            return false;
+        }
+        
+        try {
+            // 上传所有笔记
+            const response = await fetch(`${this.serverUrl}/notes.json`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(notesData)
+            });
+            
+            if (!response.ok) {
+                throw new Error(`同步失败: ${response.statusText}`);
+            }
+            
+            // 清空同步队列
+            this.syncQueue = [];
+            localStorage.setItem('syncQueue', JSON.stringify(this.syncQueue));
+            
+            // 更新最后同步时间
+            this.lastSync = new Date().toISOString();
+            localStorage.setItem('lastSync', this.lastSync);
+            
+            console.log('[syncToServer] 同步成功');
+            this.showSyncStatus('同步成功', '✅', '#28a745');
+            setTimeout(() => this.hideSyncStatus(), 2000);
+            
+            return true;
+        } catch (error) {
+            console.error('[syncToServer] 同步失败:', error);
+            this.showSyncStatus('同步失败', '❌', '#dc3545');
+            setTimeout(() => this.hideSyncStatus(), 2000);
+            return false;
+        }
+    }
+    
+    // 从服务器拉取数据
+    async pullFromServer() {
+        console.log('[pullFromServer] 开始从服务器拉取数据');
+        
+        // 检查网络连接
+        if (!navigator.onLine) {
+            console.log('[pullFromServer] 网络未连接，跳过拉取');
+            return false;
+        }
+        
+        // 检查服务器URL
+        if (!this.serverUrl) {
+            console.log('[pullFromServer] 服务器URL未配置');
+            return false;
+        }
+        
+        try {
+            const response = await fetch(`${this.serverUrl}/notes.json`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error(`拉取失败: ${response.statusText}`);
+            }
+            
+            const remoteNotes = await response.json();
+            console.log('[pullFromServer] 拉取到笔记数:', remoteNotes.length);
+            
+            // 合并数据
+            const mergedNotes = this.mergeData(notesData, remoteNotes);
+            
+            // 更新本地数据
+            notesData = mergedNotes;
+            localStorage.setItem('notes', JSON.stringify(notesData));
+            
+            // 更新UI
+            renderNotes();
+            
+            // 更新最后同步时间
+            this.lastSync = new Date().toISOString();
+            localStorage.setItem('lastSync', this.lastSync);
+            
+            console.log('[pullFromServer] 数据拉取并合并成功');
+            return true;
+        } catch (error) {
+            console.error('[pullFromServer] 拉取失败:', error);
+            return false;
+        }
+    }
+    
+    // 合并数据（时间戳优先）
+    mergeData(local, remote) {
+        console.log('[mergeData] 合并数据，本地:', local.length, '条，远程:', remote.length, '条');
+        
+        // 创建本地数据映射
+        const localMap = new Map(local.map(item => [item.id, item]));
+        const merged = [...local];
+        
+        // 处理远程数据
+        for (const remoteItem of remote) {
+            const localItem = localMap.get(remoteItem.id);
+            
+            if (!localItem) {
+                // 新数据，直接添加
+                merged.push(remoteItem);
+            } else {
+                // 已有数据，按时间戳更新
+                const localTime = new Date(localItem.updatedAt || localItem.createdAt);
+                const remoteTime = new Date(remoteItem.updatedAt || remoteItem.createdAt);
+                
+                if (remoteTime > localTime) {
+                    // 远程数据更新，替换本地数据
+                    const index = merged.findIndex(item => item.id === remoteItem.id);
+                    if (index !== -1) {
+                        merged[index] = remoteItem;
+                    }
+                }
+            }
+        }
+        
+        // 按时间戳排序（最新的在前）
+        merged.sort((a, b) => {
+            const timeA = new Date(a.updatedAt || a.createdAt);
+            const timeB = new Date(b.updatedAt || b.createdAt);
+            return timeB - timeA;
+        });
+        
+        console.log('[mergeData] 合并完成，共:', merged.length, '条数据');
+        return merged;
+    }
+    
+    // 上传图片（base64）
+    async uploadImage(base64Data, filename) {
+        console.log('[uploadImage] 开始上传图片:', filename);
+        
+        // 检查网络连接
+        if (!navigator.onLine) {
+            console.log('[uploadImage] 网络未连接，跳过上传');
+            return {
+                success: false,
+                error: '网络未连接'
+            };
+        }
+        
+        // 检查服务器URL
+        if (!this.serverUrl) {
+            console.log('[uploadImage] 服务器URL未配置');
+            return {
+                success: false,
+                error: '服务器URL未配置'
+            };
+        }
+        
+        try {
+            const response = await fetch(`${this.serverUrl}/upload`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    filename: filename,
+                    data: base64Data
+                })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`上传失败: ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            console.log('[uploadImage] 上传成功:', result);
+            return result;
+        } catch (error) {
+            console.error('[uploadImage] 上传失败:', error);
+            return {
+                success: false,
+                error: error.message
+            };
+        }
+    }
+    
+    // 显示同步状态
+    showSyncStatus(text, icon, color) {
+        const statusBar = document.getElementById('sync-status-bar');
+        const statusText = document.getElementById('sync-status-text');
+        const statusIcon = document.getElementById('sync-status-icon');
+        
+        if (statusBar) {
+            statusBar.style.display = 'block';
+            statusBar.style.background = color;
+        }
+        
+        if (statusText) {
+            statusText.textContent = text;
+        }
+        
+        if (statusIcon) {
+            statusIcon.textContent = icon;
+        }
+    }
+    
+    // 隐藏同步状态
+    hideSyncStatus() {
+        const statusBar = document.getElementById('sync-status-bar');
+        if (statusBar) {
+            statusBar.style.display = 'none';
+        }
+    }
+    
+    // 保存服务器地址
+    saveServerUrl(url) {
+        this.serverUrl = url;
+        localStorage.setItem('serverUrl', url);
+        console.log('[saveServerUrl] 服务器地址已保存:', url);
+    }
+    
+    // 获取设备ID
+    getDeviceId() {
+        return this.deviceId;
+    }
+    
+    // 获取最后同步时间
+    getLastSync() {
+        return this.lastSync;
+    }
+    
+    // 获取服务器地址
+    getServerUrl() {
+        return this.serverUrl;
+    }
+}
+
+// 同步相关函数
+
+// 检查服务器是否可用
+async function checkServer() {
+    console.log('[checkServer] 检查服务器:', serverUrl);
+    
+    if (!serverUrl) {
+        console.log('[checkServer] 服务器URL未配置');
+        return false;
+    }
+    
+    try {
+        const response = await fetch(`${serverUrl}/ping`, {
+            timeout: SYNC_CONFIG.pingTimeout,
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        const result = await response.json();
+        console.log('[checkServer] 服务器响应:', result);
+        
+        return response.ok && result.status === 'ok';
+    } catch (error) {
+        console.error('[checkServer] 服务器检查失败:', error);
+        return false;
+    }
+}
+
+// 上传待同步队列
+async function uploadSyncQueue() {
+    console.log('[uploadSyncQueue] 开始上传同步队列，队列长度:', syncQueue.length);
+    
+    if (syncQueue.length === 0) {
+        console.log('[uploadSyncQueue] 同步队列为空，跳过上传');
+        return true;
+    }
+    
+    try {
+        const response = await fetch(`${serverUrl}/sync`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                queue: syncQueue,
+                deviceId: deviceId
+            })
+        });
+        
+        const result = await response.json();
+        console.log('[uploadSyncQueue] 上传响应:', result);
+        
+        if (response.ok && result.success) {
+            console.log('[uploadSyncQueue] 同步队列上传成功');
+            // 清空已同步的队列
+            syncQueue = [];
+            localStorage.setItem('syncQueue', JSON.stringify(syncQueue));
+            return true;
+        } else {
+            throw new Error(result.message || '上传失败');
+        }
+    } catch (error) {
+        console.error('[uploadSyncQueue] 同步队列上传失败:', error);
+        return false;
+    }
+}
+
+// 下载最新数据
+async function downloadLatestData() {
+    console.log('[downloadLatestData] 开始下载最新数据');
+    
+    try {
+        const response = await fetch(`${serverUrl}/data`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        const data = await response.json();
+        console.log('[downloadLatestData] 下载数据:', { notesCount: data.notes?.length, albumsCount: data.albums?.length });
+        
+        if (response.ok && data) {
+            await mergeData(data);
+            console.log('[downloadLatestData] 数据下载并合并成功');
+            return true;
+        } else {
+            throw new Error('下载失败');
+        }
+    } catch (error) {
+        console.error('[downloadLatestData] 数据下载失败:', error);
+        return false;
+    }
+}
+
+// 合并数据
+async function mergeData(serverData) {
+    console.log('[mergeData] 开始合并数据');
+    
+    if (!serverData) return false;
+    
+    try {
+        // 合并笔记数据
+        if (Array.isArray(serverData.notes)) {
+            await mergeNotes(serverData.notes);
+        }
+        
+        // 合并相册数据
+        if (Array.isArray(serverData.albums)) {
+            await mergeAlbums(serverData.albums);
+        }
+        
+        // 更新最后同步时间
+        lastSync = new Date().toISOString();
+        localStorage.setItem('lastSync', lastSync);
+        
+        // 更新UI
+        renderNotes();
+        renderAlbums();
+        
+        console.log('[mergeData] 数据合并成功');
+        return true;
+    } catch (error) {
+        console.error('[mergeData] 数据合并失败:', error);
+        return false;
+    }
+}
+
+// 合并笔记数据
+async function mergeNotes(serverNotes) {
+    console.log('[mergeNotes] 合并笔记，本地笔记数:', notesData.length, '服务器笔记数:', serverNotes.length);
+    
+    // 创建现有笔记ID映射
+    const existingNotesMap = new Map(notesData.map(note => [note.id, note]));
+    
+    // 合并服务器笔记
+    for (const serverNote of serverNotes) {
+        const existingNote = existingNotesMap.get(serverNote.id);
+        
+        if (!existingNote) {
+            // 新笔记，直接添加
+            notesData.push(serverNote);
+        } else {
+            // 已有笔记，按时间戳更新
+            const existingTime = new Date(existingNote.updatedAt || existingNote.createdAt);
+            const serverTime = new Date(serverNote.updatedAt || serverNote.createdAt);
+            
+            if (serverTime > existingTime) {
+                // 服务器版本更新，替换本地版本
+                const index = notesData.findIndex(note => note.id === serverNote.id);
+                if (index !== -1) {
+                    notesData[index] = serverNote;
+                }
+            }
+        }
+    }
+    
+    // 保存到localStorage
+    localStorage.setItem('notes', JSON.stringify(notesData));
+    console.log('[mergeNotes] 笔记合并完成，合并后笔记数:', notesData.length);
+}
+
+// 合并相册数据
+async function mergeAlbums(serverAlbums) {
+    console.log('[mergeAlbums] 合并相册，本地相册数:', albumsData.length, '服务器相册数:', serverAlbums.length);
+    
+    // 创建现有相册ID映射
+    const existingAlbumsMap = new Map(albumsData.map(album => [album.id, album]));
+    
+    // 合并服务器相册
+    for (const serverAlbum of serverAlbums) {
+        const existingAlbum = existingAlbumsMap.get(serverAlbum.id);
+        
+        if (!existingAlbum) {
+            // 新相册，直接添加
+            albumsData.push(serverAlbum);
+        } else {
+            // 已有相册，合并媒体文件并按时间戳更新
+            const existingTime = new Date(existingAlbum.updatedAt || existingAlbum.createdAt);
+            const serverTime = new Date(serverAlbum.updatedAt || serverAlbum.createdAt);
+            
+            // 合并媒体文件
+            if (Array.isArray(serverAlbum.media)) {
+                const existingMediaMap = new Map(existingAlbum.media.map(media => [media.id || media.name, media]));
+                
+                for (const media of serverAlbum.media) {
+                    const mediaKey = media.id || media.name;
+                    if (!existingMediaMap.has(mediaKey)) {
+                        existingAlbum.media.push(media);
+                    }
+                }
+            }
+            
+            // 按时间戳更新相册
+            if (serverTime > existingTime) {
+                // 更新相册信息，但保留本地媒体文件
+                const index = albumsData.findIndex(album => album.id === serverAlbum.id);
+                if (index !== -1) {
+                    albumsData[index] = {
+                        ...serverAlbum,
+                        media: existingAlbum.media // 保留本地媒体文件
+                    };
+                }
+            }
+        }
+    }
+    
+    // 保存到localStorage
+    localStorage.setItem('albums', JSON.stringify(albumsData));
+    console.log('[mergeAlbums] 相册合并完成，合并后相册数:', albumsData.length);
+}
+
+// 同步数据
+async function syncData() {
+    console.log('[syncData] 开始同步数据');
+    
+    // 检查网络连接
+    if (!navigator.onLine) {
+        console.log('[syncData] 网络未连接，跳过同步');
+        return false;
+    }
+    
+    // 检查服务器是否可用
+    const serverAvailable = await checkServer();
+    if (!serverAvailable) {
+        console.log('[syncData] 服务器不可用，跳过同步');
+        return false;
+    }
+    
+    try {
+        // 上传待同步队列
+        const uploadSuccess = await uploadSyncQueue();
+        if (!uploadSuccess) {
+            throw new Error('上传同步队列失败');
+        }
+        
+        // 下载最新数据
+        const downloadSuccess = await downloadLatestData();
+        if (!downloadSuccess) {
+            throw new Error('下载最新数据失败');
+        }
+        
+        console.log('[syncData] 数据同步成功');
+        return true;
+    } catch (error) {
+        console.error('[syncData] 数据同步失败:', error);
+        return false;
+    }
+}
+
+// 启动同步检查
+function startSyncChecker() {
+    console.log('[startSyncChecker] 启动同步检查，间隔:', SYNC_INTERVAL, 'ms');
+    
+    // 立即执行一次同步检查
+    syncData();
+    
+    // 定时执行同步检查
+    setInterval(syncData, SYNC_INTERVAL);
+}
+
+// 初始化设置页面显示
+function initSettingsDisplay() {
+    const deviceIdDisplay = document.getElementById('device-id-display');
+    const lastSyncDisplay = document.getElementById('last-sync-display');
+    const serverUrlInput = document.getElementById('server-url');
+    
+    if (syncManager) {
+        if (deviceIdDisplay) {
+            deviceIdDisplay.textContent = syncManager.getDeviceId();
+        }
+        
+        if (lastSyncDisplay) {
+            lastSyncDisplay.textContent = syncManager.getLastSync() || '从未同步';
+        }
+        
+        if (serverUrlInput) {
+            serverUrlInput.value = syncManager.getServerUrl();
+        }
+    }
+}
+
+// 保存服务器地址
+function saveServerUrl() {
+    const serverUrlInput = document.getElementById('server-url');
+    const url = serverUrlInput.value.trim();
+    
+    if (url && syncManager) {
+        syncManager.saveServerUrl(url);
+        alert('服务器地址保存成功！');
+        initSettingsDisplay();
+    } else {
+        alert('请输入有效的服务器地址！');
+    }
+}
+
+// 立即同步数据
+function syncData() {
+    if (syncManager) {
+        syncManager.syncToServer().then(success => {
+            if (success) {
+                console.log('[syncData] 同步成功');
+            } else {
+                console.log('[syncData] 同步失败');
+            }
+        });
+    }
+}
+
+// 图片压缩函数
+function compressImage(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        
+        reader.onload = (event) => {
+            const img = new Image();
+            
+            img.onload = () => {
+                // 创建画布
+                const canvas = document.createElement('canvas');
+                let width = img.width;
+                let height = img.height;
+                
+                // 计算压缩后的尺寸
+                if (width > height) {
+                    if (width > IMAGE_CONFIG.maxWidth) {
+                        height = Math.round((height * IMAGE_CONFIG.maxWidth) / width);
+                        width = IMAGE_CONFIG.maxWidth;
+                    }
+                } else {
+                    if (height > IMAGE_CONFIG.maxHeight) {
+                        width = Math.round((width * IMAGE_CONFIG.maxHeight) / height);
+                        height = IMAGE_CONFIG.maxHeight;
+                    }
+                }
+                
+                // 设置画布尺寸
+                canvas.width = width;
+                canvas.height = height;
+                
+                // 绘制压缩后的图片
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+                
+                // 转换为base64
+                const base64Data = canvas.toDataURL('image/jpeg', IMAGE_CONFIG.quality);
+                resolve(base64Data);
+            };
+            
+            img.onerror = reject;
+            img.src = event.target.result;
+        };
+        
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
 }
 
 // DOM加载完成后执行
 document.addEventListener('DOMContentLoaded', function() {
     // 初始化数据
     initData();
+    
+    // 创建SyncManager实例
+    syncManager = new SyncManager();
     
     // 绑定事件监听器
     bindEventListeners();
@@ -114,6 +847,21 @@ document.addEventListener('DOMContentLoaded', function() {
     // 确保无论是否登录都渲染笔记和相册列表
     renderNotes();
     renderAlbums();
+    
+    // 初始化设置页面显示
+    initSettingsDisplay();
+    
+    // 启动同步检查
+    setInterval(() => {
+        if (syncManager) {
+            syncManager.pullFromServer();
+        }
+    }, SYNC_CONFIG.syncInterval);
+    
+    // 初始拉取数据
+    if (syncManager) {
+        syncManager.pullFromServer();
+    }
 });
 
 // 处理滚动事件，控制用户信息栏显示/隐藏
@@ -432,71 +1180,121 @@ function insertVideo() {
 }
 
 // 处理插入媒体
-function handleInsertMedia(file, type) {
+async function handleInsertMedia(file, type) {
     if (!file) return;
     
-    const reader = new FileReader();
-    reader.onload = (e) => {
-        const content = e.target.result;
-        const editor = document.getElementById('note-content');
-        
-        // 确保焦点在内容区域
-        editor.focus();
-        
-        // 在内容区域内插入媒体
-        const selection = window.getSelection();
-        let range;
-        
+    if (type === 'image') {
         try {
-            // 尝试获取当前范围
-            range = selection.getRangeAt(0);
-            // 检查当前范围是否在编辑器内
-            if (!editor.contains(range.commonAncestorContainer)) {
-                // 如果不在编辑器内，创建一个新的范围在编辑器末尾
-                range = document.createRange();
-                range.selectNodeContents(editor);
-                range.collapse(false);
+            // 显示加载状态
+            const statusBar = document.getElementById('sync-status-bar');
+            if (statusBar) {
+                statusBar.style.display = 'block';
+                statusBar.style.background = '#17a2b8';
+                statusBar.innerHTML = '<span id="sync-status-text">正在压缩图片...</span><span id="sync-status-icon">🖼️</span>';
+            }
+            
+            // 压缩图片
+            const compressedData = await compressImage(file);
+            
+            // 如果在线，上传到服务器
+            let finalUrl = compressedData;
+            if (navigator.onLine && syncManager) {
+                statusBar.innerHTML = '<span id="sync-status-text">正在上传图片...</span><span id="sync-status-icon">📤</span>';
+                const uploadResult = await syncManager.uploadImage(compressedData, file.name);
+                if (uploadResult.success && uploadResult.url) {
+                    finalUrl = uploadResult.url;
+                }
+            }
+            
+            // 插入图片到编辑器
+            insertMediaIntoEditor(finalUrl, type, file.name);
+            
+            // 隐藏加载状态
+            if (statusBar) {
+                statusBar.style.display = 'none';
             }
         } catch (error) {
-            // 如果无法获取范围，创建一个新的范围在编辑器末尾
+            console.error('[handleInsertMedia] 处理图片失败:', error);
+            alert('图片处理失败，请重试！');
+            
+            // 隐藏加载状态
+            const statusBar = document.getElementById('sync-status-bar');
+            if (statusBar) {
+                statusBar.style.display = 'none';
+            }
+        }
+    } else if (type === 'video') {
+        // 视频处理（暂时直接使用base64）
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const content = e.target.result;
+            insertMediaIntoEditor(content, type, file.name);
+        };
+        reader.readAsDataURL(file);
+    }
+}
+
+// 插入媒体到编辑器
+function insertMediaIntoEditor(content, type, fileName) {
+    const editor = document.getElementById('note-content');
+    
+    // 确保焦点在内容区域
+    editor.focus();
+    
+    // 在内容区域内插入媒体
+    const selection = window.getSelection();
+    let range;
+    
+    try {
+        // 尝试获取当前范围
+        range = selection.getRangeAt(0);
+        // 检查当前范围是否在编辑器内
+        if (!editor.contains(range.commonAncestorContainer)) {
+            // 如果不在编辑器内，创建一个新的范围在编辑器末尾
             range = document.createRange();
             range.selectNodeContents(editor);
             range.collapse(false);
         }
-        
-        if (type === 'image') {
-            const img = document.createElement('img');
-            img.src = content;
-            img.alt = file.name;
-            // 添加样式类，确保图片大小合适
-            img.style.maxWidth = '100%';
-            img.style.maxHeight = '400px';
-            img.style.height = 'auto';
-            img.style.objectFit = 'contain';
-            range.insertNode(img);
-        } else if (type === 'video') {
-            const video = document.createElement('video');
-            video.src = content;
-            video.controls = true;
-            video.muted = false;
-            // 添加样式类，确保视频大小合适
-            video.style.maxWidth = '100%';
-            video.style.maxHeight = '400px';
-            video.style.height = 'auto';
-            range.insertNode(video);
-        }
-        
-        // 移动光标到媒体后面
-        const insertedMedia = type === 'image' ? img : video;
-        range.setStartAfter(insertedMedia);
-        range.collapse(true);
-        selection.removeAllRanges();
-        selection.addRange(range);
-        
-        // 触发input事件
-        editor.dispatchEvent(new Event('input', { bubbles: true }));
-    };
-    reader.readAsDataURL(file);
+    } catch (error) {
+        // 如果无法获取范围，创建一个新的范围在编辑器末尾
+        range = document.createRange();
+        range.selectNodeContents(editor);
+        range.collapse(false);
+    }
+    
+    if (type === 'image') {
+        const img = document.createElement('img');
+        img.src = content;
+        img.alt = fileName;
+        // 添加样式类，确保图片大小合适
+        img.style.maxWidth = '100%';
+        img.style.maxHeight = '400px';
+        img.style.height = 'auto';
+        img.style.objectFit = 'contain';
+        img.style.margin = '10px 0';
+        range.insertNode(img);
+    } else if (type === 'video') {
+        const video = document.createElement('video');
+        video.src = content;
+        video.controls = true;
+        video.muted = false;
+        // 添加样式类，确保视频大小合适
+        video.style.maxWidth = '100%';
+        video.style.maxHeight = '400px';
+        video.style.height = 'auto';
+        video.style.margin = '10px 0';
+        range.insertNode(video);
+    }
+    
+    // 移动光标到媒体后面
+    const insertedMedia = type === 'image' ? img : video;
+    range.setStartAfter(insertedMedia);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    
+    // 触发input事件
+    editor.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
 // 添加笔记
@@ -515,7 +1313,8 @@ function addNote() {
         content: content,
         author: currentUser.nickname,
         comments: [],
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
     };
     
     // 添加到数据缓存
@@ -523,6 +1322,12 @@ function addNote() {
     
     // 保存到localStorage
     localStorage.setItem('notes', JSON.stringify(notesData));
+    
+    // 使用SyncManager进行同步
+    if (syncManager) {
+        syncManager.addToQueue(newNote);
+        syncManager.syncToServer();
+    }
     
     // 重置表单并关闭模态框
     document.getElementById('note-form').reset();
@@ -847,11 +1652,19 @@ function deleteReply(noteId, commentId, replyId) {
 // 删除笔记
 function deleteNote(noteId) {
     if (confirm('确定要删除这篇笔记吗？删除后无法恢复！')) {
+        // 找到要删除的笔记
+        const noteToDelete = notesData.find(note => note.id === noteId);
+        
         // 从数据缓存中删除笔记
         notesData = notesData.filter(note => note.id !== noteId);
         
         // 保存到localStorage
         localStorage.setItem('notes', JSON.stringify(notesData));
+        
+        // 添加到待同步队列
+        if (noteToDelete) {
+            addToSyncQueue('delete', 'note', noteToDelete);
+        }
         
         // 重新渲染笔记列表
         renderNotes();
@@ -928,9 +1741,18 @@ function deleteAlbum(albumId) {
     
     if (album) {
         if (confirm(`确定要删除相册"${album.name}"吗？相册中的所有媒体文件也将被删除，删除后无法恢复！`)) {
+            // 从数据缓存中删除相册
             albumsData = albumsData.filter(a => a.id !== albumId);
+            
+            // 保存到localStorage
             localStorage.setItem('albums', JSON.stringify(albumsData));
+            
+            // 添加到待同步队列
+            addToSyncQueue('delete', 'album', album);
+            
+            // 重新渲染相册列表
             renderAlbums();
+            
             alert('相册已成功删除！');
         }
     }
@@ -946,7 +1768,8 @@ function addAlbum() {
         name: name,
         description: description,
         media: [],
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
     };
     
     // 添加到数据缓存
@@ -954,6 +1777,9 @@ function addAlbum() {
     
     // 保存到localStorage
     localStorage.setItem('albums', JSON.stringify(albumsData));
+    
+    // 添加到待同步队列
+    addToSyncQueue('add', 'album', newAlbum);
     
     // 重置表单并关闭模态框
     document.getElementById('album-form').reset();
@@ -1187,11 +2013,17 @@ function uploadAlbumMedia() {
             // 更新数据缓存
             albumsData[albumIndex].media = [...albumsData[albumIndex].media, ...newMedia];
             
+            // 更新相册的更新时间
+            albumsData[albumIndex].updatedAt = new Date().toISOString();
+            
             // 保存到localStorage
             localStorage.setItem('albums', JSON.stringify(albumsData));
             
             // 更新当前相册对象
             currentAlbum = albumsData[albumIndex];
+            
+            // 将更新后的相册添加到待同步队列
+            addToSyncQueue('update', 'album', currentAlbum);
             
             // 重置文件输入并重新渲染
             fileInput.value = '';
@@ -1210,11 +2042,17 @@ function deleteAlbumMedia(index) {
             // 更新数据缓存
             albumsData[albumIndex].media.splice(index, 1);
             
+            // 更新相册的更新时间
+            albumsData[albumIndex].updatedAt = new Date().toISOString();
+            
             // 保存到localStorage
             localStorage.setItem('albums', JSON.stringify(albumsData));
             
             // 更新当前相册对象
             currentAlbum = albumsData[albumIndex];
+            
+            // 将更新后的相册添加到待同步队列
+            addToSyncQueue('update', 'album', currentAlbum);
             
             // 重新渲染
             renderAlbumDetail();
@@ -1251,6 +2089,75 @@ function viewMedia(url, type) {
     mediaViewer.classList.add('active');
 }
 
+// 保存服务器URL
+function saveServerUrl() {
+    const serverUrlInput = document.getElementById('server-url');
+    const newServerUrl = serverUrlInput.value.trim();
+    
+    if (newServerUrl) {
+        // 验证URL格式
+        try {
+            new URL(newServerUrl);
+            serverUrl = newServerUrl;
+            localStorage.setItem('serverUrl', serverUrl);
+            alert('服务器地址保存成功！');
+            
+            // 立即尝试同步
+            syncData();
+        } catch (error) {
+            alert('请输入有效的URL地址！');
+        }
+    } else {
+        alert('请输入服务器地址！');
+    }
+}
+
+// 更新设备信息显示
+function updateDeviceInfoDisplay() {
+    // 显示设备ID
+    const deviceIdDisplay = document.getElementById('device-id-display');
+    if (deviceIdDisplay && deviceId) {
+        deviceIdDisplay.textContent = deviceId;
+    }
+    
+    // 显示最后同步时间
+    const lastSyncDisplay = document.getElementById('last-sync-display');
+    if (lastSyncDisplay) {
+        if (lastSync) {
+            lastSyncDisplay.textContent = new Date(lastSync).toLocaleString('zh-CN');
+        } else {
+            lastSyncDisplay.textContent = '从未同步';
+        }
+    }
+    
+    // 设置服务器URL输入框的值
+    const serverUrlInput = document.getElementById('server-url');
+    if (serverUrlInput) {
+        serverUrlInput.value = serverUrl;
+    }
+}
+
+// 初始化设置页面显示
+function initSettingsDisplay() {
+    // 监听设置模态框显示事件
+    const settingsModal = document.getElementById('settings-modal');
+    if (settingsModal) {
+        // 使用MutationObserver监听模态框显示状态变化
+        const observer = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+                if (mutation.attributeName === 'class' && settingsModal.classList.contains('show')) {
+                    updateDeviceInfoDisplay();
+                }
+            });
+        });
+        
+        observer.observe(settingsModal, {
+            attributes: true,
+            attributeFilter: ['class']
+        });
+    }
+}
+
 // 格式化日期
 function formatDate(dateString) {
     const date = new Date(dateString);
@@ -1266,4 +2173,134 @@ function formatDate(dateString) {
 // 辅助函数：生成唯一ID
 function generateId() {
     return Date.now().toString() + Math.random().toString(36).substr(2, 9);
+}
+
+// 数据同步功能
+
+// 导出所有数据为JSON文件
+function exportData() {
+    try {
+        // 获取所有数据
+        const data = {
+            notes: notesData,
+            albums: albumsData,
+            users: usersData,
+            exportDate: new Date().toISOString(),
+            version: '1.0'
+        };
+        
+        // 转换为JSON字符串
+        const jsonString = JSON.stringify(data, null, 2);
+        
+        // 创建Blob对象
+        const blob = new Blob([jsonString], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        
+        // 创建下载链接
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `couple-notes-export-${new Date().toISOString().slice(0, 10)}.json`;
+        
+        // 触发下载
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        
+        // 释放URL对象
+        URL.revokeObjectURL(url);
+        
+        console.log('[exportData] 数据导出成功');
+        alert('数据导出成功！');
+    } catch (error) {
+        console.error('[exportData] 数据导出失败:', error);
+        alert('数据导出失败，请重试！');
+    }
+}
+
+// 导入数据从JSON文件
+function importData(event) {
+    try {
+        const file = event.target.files[0];
+        if (!file) return;
+        
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const jsonString = e.target.result;
+            const importedData = JSON.parse(jsonString);
+            
+            // 验证数据格式
+            if (!importedData.notes || !importedData.albums || !importedData.users) {
+                throw new Error('无效的数据格式');
+            }
+            
+            // 合并数据
+            mergeData(importedData);
+            
+            // 更新UI
+            renderNotes();
+            renderAlbums();
+            
+            console.log('[importData] 数据导入成功');
+            alert('数据导入成功！');
+        };
+        reader.readAsText(file);
+    } catch (error) {
+        console.error('[importData] 数据导入失败:', error);
+        alert('数据导入失败，请检查文件格式！');
+    }
+}
+
+// 合并数据
+function mergeData(importedData) {
+    try {
+        console.log('[mergeData] 开始合并数据');
+        
+        // 合并笔记数据
+        if (Array.isArray(importedData.notes)) {
+            const existingNoteIds = new Set(notesData.map(note => note.id));
+            const newNotes = importedData.notes.filter(note => !existingNoteIds.has(note.id));
+            notesData = [...notesData, ...newNotes].sort((a, b) => 
+                new Date(b.createdAt) - new Date(a.createdAt)
+            );
+            localStorage.setItem('notes', JSON.stringify(notesData));
+            console.log('[mergeData] 合并了', newNotes.length, '条新笔记');
+        }
+        
+        // 合并相册数据
+        if (Array.isArray(importedData.albums)) {
+            const existingAlbumIds = new Set(albumsData.map(album => album.id));
+            const newAlbums = importedData.albums.filter(album => !existingAlbumIds.has(album.id));
+            
+            // 合并相册数据
+            newAlbums.forEach(newAlbum => {
+                const existingAlbum = albumsData.find(album => album.id === newAlbum.id);
+                if (existingAlbum) {
+                    // 如果相册已存在，合并媒体文件
+                    const existingMediaIds = new Set(existingAlbum.media.map(media => media.name));
+                    const newMedia = newAlbum.media.filter(media => !existingMediaIds.has(media.name));
+                    existingAlbum.media = [...existingAlbum.media, ...newMedia];
+                } else {
+                    // 否则添加新相册
+                    albumsData.push(newAlbum);
+                }
+            });
+            
+            localStorage.setItem('albums', JSON.stringify(albumsData));
+            console.log('[mergeData] 合并了', newAlbums.length, '个新相册');
+        }
+        
+        // 合并用户数据
+        if (Array.isArray(importedData.users)) {
+            const existingUserIds = new Set(usersData.map(user => user.id));
+            const newUsers = importedData.users.filter(user => !existingUserIds.has(user.id));
+            usersData = [...usersData, ...newUsers];
+            localStorage.setItem('users', JSON.stringify(usersData));
+            console.log('[mergeData] 合并了', newUsers.length, '个新用户');
+        }
+        
+        console.log('[mergeData] 数据合并完成');
+    } catch (error) {
+        console.error('[mergeData] 数据合并失败:', error);
+        throw error;
+    }
 }
