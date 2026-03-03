@@ -86,30 +86,18 @@ function initData() {
         const storedNotes = localStorage.getItem('notes');
         const storedAlbums = localStorage.getItem('albums');
         const storedUsers = localStorage.getItem('users');
-        const storedSyncQueue = localStorage.getItem('syncQueue');
-        const storedDeviceId = localStorage.getItem('deviceId');
-        const storedServerUrl = localStorage.getItem('serverUrl');
-        const storedLastSync = localStorage.getItem('lastSync');
         
-        console.log('[initData] localStorage数据:', { storedNotes, storedAlbums, storedUsers, storedSyncQueue, storedDeviceId, storedServerUrl, storedLastSync });
+        console.log('[initData] localStorage数据:', { storedNotes, storedAlbums, storedUsers });
         
         // 安全解析localStorage数据
         notesData = storedNotes ? JSON.parse(storedNotes) : [];
         albumsData = storedAlbums ? JSON.parse(storedAlbums) : [];
         usersData = storedUsers ? JSON.parse(storedUsers) : [];
-        syncQueue = storedSyncQueue ? JSON.parse(storedSyncQueue) : [];
-        serverUrl = storedServerUrl || '';
-        lastSync = storedLastSync || '';
-        
-        // 生成或加载设备ID
-        deviceId = storedDeviceId || generateDeviceId();
-        localStorage.setItem('deviceId', deviceId);
         
         // 确保数据类型正确
         notesData = Array.isArray(notesData) ? notesData : [];
         albumsData = Array.isArray(albumsData) ? albumsData : [];
         usersData = Array.isArray(usersData) ? usersData : [];
-        syncQueue = Array.isArray(syncQueue) ? syncQueue : [];
         
         // 初始化默认用户数据（如果不存在）
         if (usersData.length === 0) {
@@ -138,11 +126,7 @@ function initData() {
         console.log('[initData] 初始化完成:', { 
             notesCount: notesData.length, 
             albumsCount: albumsData.length, 
-            usersCount: usersData.length,
-            syncQueueCount: syncQueue.length,
-            deviceId: deviceId,
-            serverUrl: serverUrl,
-            lastSync: lastSync
+            usersCount: usersData.length
         });
     } catch (error) {
         console.error('[initData] 初始化数据时发生错误:', error);
@@ -150,10 +134,7 @@ function initData() {
         notesData = [];
         albumsData = [];
         usersData = [];
-        syncQueue = [];
         localStorage.clear();
-        deviceId = generateDeviceId();
-        localStorage.setItem('deviceId', deviceId);
         console.log('[initData] 已重置所有数据');
     }
 }
@@ -242,6 +223,40 @@ class SyncManager {
         localStorage.setItem('syncQueue', JSON.stringify(this.syncQueue));
         
         console.log('[addToQueue] 同步记录添加成功，队列长度:', this.syncQueue.length);
+        
+        // 如果在线，立即尝试同步
+        if (navigator.onLine) {
+            this.syncToServer();
+        }
+    }
+    
+    // 添加到同步队列（通用方法，支持多种数据类型和操作类型）
+    addToSyncQueue(type, dataType, data) {
+        console.log(`[addToSyncQueue] 添加到同步队列: ${type} ${dataType}`, data.id || data);
+        
+        // 检查队列大小
+        if (this.syncQueue.length >= SYNC_CONFIG.maxQueueSize) {
+            console.warn('[addToSyncQueue] 同步队列已满，移除最旧的记录');
+            this.syncQueue.shift();
+        }
+        
+        // 创建同步记录
+        const syncItem = {
+            id: generateId(),
+            type: type,
+            dataType: dataType,
+            data: data,
+            timestamp: new Date().toISOString(),
+            deviceId: this.deviceId
+        };
+        
+        // 添加到队列
+        this.syncQueue.push(syncItem);
+        
+        // 保存到localStorage
+        localStorage.setItem('syncQueue', JSON.stringify(this.syncQueue));
+        
+        console.log('[addToSyncQueue] 同步记录添加成功，队列长度:', this.syncQueue.length);
         
         // 如果在线，立即尝试同步
         if (navigator.onLine) {
@@ -560,301 +575,8 @@ class SyncManager {
 // 同步相关函数
 
 // 检查服务器是否可用
-async function checkServer() {
-    console.log('[checkServer] 检查服务器:', serverUrl);
-    
-    if (!serverUrl) {
-        console.log('[checkServer] 服务器URL未配置');
-        return false;
-    }
-    
-    try {
-        const response = await fetch(`${serverUrl}/ping`, {
-            timeout: SYNC_CONFIG.pingTimeout,
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        });
-        
-        const result = await response.json();
-        console.log('[checkServer] 服务器响应:', result);
-        
-        return response.ok && result.status === 'ok';
-    } catch (error) {
-        console.error('[checkServer] 服务器检查失败:', error);
-        return false;
-    }
-}
-
-// 上传待同步队列
-async function uploadSyncQueue() {
-    console.log('[uploadSyncQueue] 开始上传同步队列，队列长度:', syncQueue.length);
-    
-    if (syncQueue.length === 0) {
-        console.log('[uploadSyncQueue] 同步队列为空，跳过上传');
-        return true;
-    }
-    
-    try {
-        const response = await fetch(`${serverUrl}/sync`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                queue: syncQueue,
-                deviceId: deviceId
-            })
-        });
-        
-        const result = await response.json();
-        console.log('[uploadSyncQueue] 上传响应:', result);
-        
-        if (response.ok && result.success) {
-            console.log('[uploadSyncQueue] 同步队列上传成功');
-            // 清空已同步的队列
-            syncQueue = [];
-            localStorage.setItem('syncQueue', JSON.stringify(syncQueue));
-            return true;
-        } else {
-            throw new Error(result.message || '上传失败');
-        }
-    } catch (error) {
-        console.error('[uploadSyncQueue] 同步队列上传失败:', error);
-        return false;
-    }
-}
-
-// 下载最新数据
-async function downloadLatestData() {
-    console.log('[downloadLatestData] 开始下载最新数据');
-    
-    try {
-        const response = await fetch(`${serverUrl}/data`, {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        });
-        
-        const data = await response.json();
-        console.log('[downloadLatestData] 下载数据:', { notesCount: data.notes?.length, albumsCount: data.albums?.length });
-        
-        if (response.ok && data) {
-            await mergeData(data);
-            console.log('[downloadLatestData] 数据下载并合并成功');
-            return true;
-        } else {
-            throw new Error('下载失败');
-        }
-    } catch (error) {
-        console.error('[downloadLatestData] 数据下载失败:', error);
-        return false;
-    }
-}
-
-// 合并数据
-async function mergeData(serverData) {
-    console.log('[mergeData] 开始合并数据');
-    
-    if (!serverData) return false;
-    
-    try {
-        // 合并笔记数据
-        if (Array.isArray(serverData.notes)) {
-            await mergeNotes(serverData.notes);
-        }
-        
-        // 合并相册数据
-        if (Array.isArray(serverData.albums)) {
-            await mergeAlbums(serverData.albums);
-        }
-        
-        // 更新最后同步时间
-        lastSync = new Date().toISOString();
-        localStorage.setItem('lastSync', lastSync);
-        
-        // 更新UI
-        renderNotes();
-        renderAlbums();
-        
-        console.log('[mergeData] 数据合并成功');
-        return true;
-    } catch (error) {
-        console.error('[mergeData] 数据合并失败:', error);
-        return false;
-    }
-}
-
-// 合并笔记数据
-async function mergeNotes(serverNotes) {
-    console.log('[mergeNotes] 合并笔记，本地笔记数:', notesData.length, '服务器笔记数:', serverNotes.length);
-    
-    // 创建现有笔记ID映射
-    const existingNotesMap = new Map(notesData.map(note => [note.id, note]));
-    
-    // 合并服务器笔记
-    for (const serverNote of serverNotes) {
-        const existingNote = existingNotesMap.get(serverNote.id);
-        
-        if (!existingNote) {
-            // 新笔记，直接添加
-            notesData.push(serverNote);
-        } else {
-            // 已有笔记，按时间戳更新
-            const existingTime = new Date(existingNote.updatedAt || existingNote.createdAt);
-            const serverTime = new Date(serverNote.updatedAt || serverNote.createdAt);
-            
-            if (serverTime > existingTime) {
-                // 服务器版本更新，替换本地版本
-                const index = notesData.findIndex(note => note.id === serverNote.id);
-                if (index !== -1) {
-                    notesData[index] = serverNote;
-                }
-            }
-        }
-    }
-    
-    // 保存到localStorage
-    localStorage.setItem('notes', JSON.stringify(notesData));
-    console.log('[mergeNotes] 笔记合并完成，合并后笔记数:', notesData.length);
-}
-
-// 合并相册数据
-async function mergeAlbums(serverAlbums) {
-    console.log('[mergeAlbums] 合并相册，本地相册数:', albumsData.length, '服务器相册数:', serverAlbums.length);
-    
-    // 创建现有相册ID映射
-    const existingAlbumsMap = new Map(albumsData.map(album => [album.id, album]));
-    
-    // 合并服务器相册
-    for (const serverAlbum of serverAlbums) {
-        const existingAlbum = existingAlbumsMap.get(serverAlbum.id);
-        
-        if (!existingAlbum) {
-            // 新相册，直接添加
-            albumsData.push(serverAlbum);
-        } else {
-            // 已有相册，合并媒体文件并按时间戳更新
-            const existingTime = new Date(existingAlbum.updatedAt || existingAlbum.createdAt);
-            const serverTime = new Date(serverAlbum.updatedAt || serverAlbum.createdAt);
-            
-            // 合并媒体文件
-            if (Array.isArray(serverAlbum.media)) {
-                const existingMediaMap = new Map(existingAlbum.media.map(media => [media.id || media.name, media]));
-                
-                for (const media of serverAlbum.media) {
-                    const mediaKey = media.id || media.name;
-                    if (!existingMediaMap.has(mediaKey)) {
-                        existingAlbum.media.push(media);
-                    }
-                }
-            }
-            
-            // 按时间戳更新相册
-            if (serverTime > existingTime) {
-                // 更新相册信息，但保留本地媒体文件
-                const index = albumsData.findIndex(album => album.id === serverAlbum.id);
-                if (index !== -1) {
-                    albumsData[index] = {
-                        ...serverAlbum,
-                        media: existingAlbum.media // 保留本地媒体文件
-                    };
-                }
-            }
-        }
-    }
-    
-    // 保存到localStorage
-    localStorage.setItem('albums', JSON.stringify(albumsData));
-    console.log('[mergeAlbums] 相册合并完成，合并后相册数:', albumsData.length);
-}
-
 // 同步数据
-async function syncData() {
-    console.log('[syncData] 开始同步数据');
-    
-    // 检查网络连接
-    if (!navigator.onLine) {
-        console.log('[syncData] 网络未连接，跳过同步');
-        return false;
-    }
-    
-    // 检查服务器是否可用
-    const serverAvailable = await checkServer();
-    if (!serverAvailable) {
-        console.log('[syncData] 服务器不可用，跳过同步');
-        return false;
-    }
-    
-    try {
-        // 上传待同步队列
-        const uploadSuccess = await uploadSyncQueue();
-        if (!uploadSuccess) {
-            throw new Error('上传同步队列失败');
-        }
-        
-        // 下载最新数据
-        const downloadSuccess = await downloadLatestData();
-        if (!downloadSuccess) {
-            throw new Error('下载最新数据失败');
-        }
-        
-        console.log('[syncData] 数据同步成功');
-        return true;
-    } catch (error) {
-        console.error('[syncData] 数据同步失败:', error);
-        return false;
-    }
-}
-
-// 启动同步检查
-function startSyncChecker() {
-    console.log('[startSyncChecker] 启动同步检查，间隔:', SYNC_INTERVAL, 'ms');
-    
-    // 立即执行一次同步检查
-    syncData();
-    
-    // 定时执行同步检查
-    setInterval(syncData, SYNC_INTERVAL);
-}
-
 // 初始化设置页面显示
-function initSettingsDisplay() {
-    const deviceIdDisplay = document.getElementById('device-id-display');
-    const lastSyncDisplay = document.getElementById('last-sync-display');
-    const serverUrlInput = document.getElementById('server-url');
-    
-    if (syncManager) {
-        if (deviceIdDisplay) {
-            deviceIdDisplay.textContent = syncManager.getDeviceId();
-        }
-        
-        if (lastSyncDisplay) {
-            lastSyncDisplay.textContent = syncManager.getLastSync() || '从未同步';
-        }
-        
-        if (serverUrlInput) {
-            serverUrlInput.value = syncManager.getServerUrl();
-        }
-    }
-}
-
-// 保存服务器地址
-function saveServerUrl() {
-    const serverUrlInput = document.getElementById('server-url');
-    const url = serverUrlInput.value.trim();
-    
-    if (url && syncManager) {
-        syncManager.saveServerUrl(url);
-        alert('服务器地址保存成功！');
-        initSettingsDisplay();
-    } else {
-        alert('请输入有效的服务器地址！');
-    }
-}
-
 // 立即同步数据
 function syncData() {
     if (syncManager) {
@@ -1759,8 +1481,8 @@ function deleteNote(noteId) {
         localStorage.setItem('notes', JSON.stringify(notesData));
         
         // 添加到待同步队列
-        if (noteToDelete) {
-            addToSyncQueue('delete', 'note', noteToDelete);
+        if (noteToDelete && syncManager) {
+            syncManager.addToSyncQueue('delete', 'note', noteToDelete);
         }
         
         // 重新渲染笔记列表
@@ -1845,7 +1567,9 @@ function deleteAlbum(albumId) {
             localStorage.setItem('albums', JSON.stringify(albumsData));
             
             // 添加到待同步队列
-            addToSyncQueue('delete', 'album', album);
+            if (syncManager) {
+                syncManager.addToSyncQueue('delete', 'album', album);
+            }
             
             // 重新渲染相册列表
             renderAlbums();
@@ -1876,7 +1600,9 @@ function addAlbum() {
     localStorage.setItem('albums', JSON.stringify(albumsData));
     
     // 添加到待同步队列
-    addToSyncQueue('add', 'album', newAlbum);
+    if (syncManager) {
+        syncManager.addToSyncQueue('add', 'album', newAlbum);
+    }
     
     // 重置表单并关闭模态框
     document.getElementById('album-form').reset();
@@ -1897,39 +1623,6 @@ function openAlbum(albumId) {
 }
 
 // 渲染相册详情
-function renderAlbumDetail() {
-    const content = document.getElementById('album-detail-content');
-    
-    content.innerHTML = `
-        <div class="album-detail-header">
-            <h3>${currentAlbum.name}</h3>
-            <p>${currentAlbum.description}</p>
-            <p style="color: #999; font-size: 0.9rem;">创建于：${formatDate(currentAlbum.createdAt)}</p>
-        </div>
-        
-        <div class="media-upload">
-            <h4>📤 上传媒体</h4>
-            <input type="file" id="album-media" name="media" multiple accept="image/*,video/*" style="display: none;">
-            <button class="btn-primary" onclick="document.getElementById('album-media').click()">从手机上传</button>
-            <button class="btn-primary" style="margin-left: 0.5rem; background: #28a745;" onclick="openImportModal()">📝 从笔记导入</button>
-        </div>
-        
-        <h4>📷 媒体列表 (${currentAlbum.media.length})</h4>
-        <div class="media-grid">
-            ${currentAlbum.media.length > 0 ? currentAlbum.media.map((item, index) => `
-                <div class="media-item">
-                    ${item.type.startsWith('image/') ? `
-                        <img src="${item.data}" alt="${item.name}" onclick="viewMedia('${item.data}', '${item.type}')">
-                    ` : `
-                        <video src="${item.data}" onclick="viewMedia('${item.data}', '${item.type}')"></video>
-                    `}
-                    <button class="delete-media" onclick="deleteAlbumMedia(${index})">×</button>
-                </div>
-            `).join('') : '<p style="text-align: center; color: #999; grid-column: 1 / -1;">相册中还没有媒体文件</p>'}
-        </div>
-    `;
-}
-
 // 打开从笔记导入图片模态框
 function openImportModal() {
     const importModal = document.getElementById('import-modal');
@@ -2120,7 +1813,9 @@ function uploadAlbumMedia() {
             currentAlbum = albumsData[albumIndex];
             
             // 将更新后的相册添加到待同步队列
-            addToSyncQueue('update', 'album', currentAlbum);
+            if (syncManager) {
+                syncManager.addToSyncQueue('update', 'album', currentAlbum);
+            }
             
             // 重置文件输入并重新渲染
             fileInput.value = '';
@@ -2149,7 +1844,9 @@ function deleteAlbumMedia(index) {
             currentAlbum = albumsData[albumIndex];
             
             // 将更新后的相册添加到待同步队列
-            addToSyncQueue('update', 'album', currentAlbum);
+            if (syncManager) {
+                syncManager.addToSyncQueue('update', 'album', currentAlbum);
+            }
             
             // 重新渲染
             renderAlbumDetail();
@@ -2195,8 +1892,9 @@ function saveServerUrl() {
         // 验证URL格式
         try {
             new URL(newServerUrl);
-            serverUrl = newServerUrl;
-            localStorage.setItem('serverUrl', serverUrl);
+            if (syncManager) {
+                syncManager.saveServerUrl(newServerUrl);
+            }
             alert('服务器地址保存成功！');
             
             // 立即尝试同步
@@ -2213,15 +1911,16 @@ function saveServerUrl() {
 function updateDeviceInfoDisplay() {
     // 显示设备ID
     const deviceIdDisplay = document.getElementById('device-id-display');
-    if (deviceIdDisplay && deviceId) {
-        deviceIdDisplay.textContent = deviceId;
+    if (deviceIdDisplay && syncManager) {
+        deviceIdDisplay.textContent = syncManager.getDeviceId();
     }
     
     // 显示最后同步时间
     const lastSyncDisplay = document.getElementById('last-sync-display');
-    if (lastSyncDisplay) {
-        if (lastSync) {
-            lastSyncDisplay.textContent = new Date(lastSync).toLocaleString('zh-CN');
+    if (lastSyncDisplay && syncManager) {
+        const lastSyncTime = syncManager.getLastSync();
+        if (lastSyncTime) {
+            lastSyncDisplay.textContent = new Date(lastSyncTime).toLocaleString('zh-CN');
         } else {
             lastSyncDisplay.textContent = '从未同步';
         }
@@ -2229,8 +1928,8 @@ function updateDeviceInfoDisplay() {
     
     // 设置服务器URL输入框的值
     const serverUrlInput = document.getElementById('server-url');
-    if (serverUrlInput) {
-        serverUrlInput.value = serverUrl;
+    if (serverUrlInput && syncManager) {
+        serverUrlInput.value = syncManager.getServerUrl();
     }
 }
 
@@ -2253,23 +1952,6 @@ function initSettingsDisplay() {
             attributeFilter: ['class']
         });
     }
-}
-
-// 格式化日期
-function formatDate(dateString) {
-    const date = new Date(dateString);
-    return date.toLocaleString('zh-CN', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit'
-    });
-}
-
-// 辅助函数：生成唯一ID
-function generateId() {
-    return Date.now().toString() + Math.random().toString(36).substr(2, 9);
 }
 
 // 数据同步功能
