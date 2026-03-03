@@ -38,8 +38,44 @@ const SYNC_INTERVAL = 60000; // 1分钟同步检查间隔
 const SYNC_CONFIG = {
     pingTimeout: 5000, // 5秒超时
     maxQueueSize: 1000, // 最大队列大小
-    retryDelay: 30000 // 30秒重试间隔
+    retryDelay: 30000, // 30秒重试间隔
+    syncInterval: 60000, // 1分钟同步检查间隔
+    debounceDelay: 2000 // 2秒防抖延迟
 };
+
+// 图片压缩配置
+const IMAGE_CONFIG = {
+    maxWidth: 1200,
+    maxHeight: 1200,
+    quality: 0.8
+};
+
+// 同步状态
+let syncStatus = {
+    isSyncing: false,
+    lastSyncTime: null,
+    pendingChanges: false,
+    retryCount: 0
+};
+
+// 防抖定时器
+let syncDebounceTimer = null;
+
+// 防抖同步函数
+function debouncedSync(note) {
+    // 清除之前的定时器
+    if (syncDebounceTimer) {
+        clearTimeout(syncDebounceTimer);
+    }
+    
+    // 设置新的定时器
+    syncDebounceTimer = setTimeout(() => {
+        if (syncManager && note) {
+            syncManager.addToQueue(note);
+            syncManager.syncToServer();
+        }
+    }, SYNC_CONFIG.debounceDelay);
+}
 
 // 初始化数据
 function initData() {
@@ -213,17 +249,24 @@ class SyncManager {
         }
     }
     
-    // 同步到服务器
+    // 同步到服务器（异步非阻塞）
     async syncToServer() {
+        // 如果正在同步，跳过
+        if (syncStatus.isSyncing) {
+            console.log('[syncToServer] 正在同步中，跳过');
+            return false;
+        }
+        
         console.log('[syncToServer] 开始同步到服务器');
         
         // 显示同步状态
-        this.showSyncStatus('正在同步...', '🔄', '#28a745');
+        this.showSyncStatus('正在同步...', '🔄', '#17a2b8');
         
         // 检查网络连接
         if (!navigator.onLine) {
             console.log('[syncToServer] 网络未连接，跳过同步');
-            this.hideSyncStatus();
+            this.showSyncStatus('离线模式', '📴', '#6c757d');
+            setTimeout(() => this.hideSyncStatus(), 2000);
             return false;
         }
         
@@ -234,15 +277,24 @@ class SyncManager {
             return false;
         }
         
+        // 标记为正在同步
+        syncStatus.isSyncing = true;
+        
         try {
-            // 上传所有笔记
+            // 上传所有笔记（设置超时）
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), SYNC_CONFIG.pingTimeout);
+            
             const response = await fetch(`${this.serverUrl}/notes.json`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify(notesData)
+                body: JSON.stringify(notesData),
+                signal: controller.signal
             });
+            
+            clearTimeout(timeoutId);
             
             if (!response.ok) {
                 throw new Error(`同步失败: ${response.statusText}`);
@@ -256,6 +308,9 @@ class SyncManager {
             this.lastSync = new Date().toISOString();
             localStorage.setItem('lastSync', this.lastSync);
             
+            // 重置重试计数
+            syncStatus.retryCount = 0;
+            
             console.log('[syncToServer] 同步成功');
             this.showSyncStatus('同步成功', '✅', '#28a745');
             setTimeout(() => this.hideSyncStatus(), 2000);
@@ -263,14 +318,37 @@ class SyncManager {
             return true;
         } catch (error) {
             console.error('[syncToServer] 同步失败:', error);
-            this.showSyncStatus('同步失败', '❌', '#dc3545');
-            setTimeout(() => this.hideSyncStatus(), 2000);
+            
+            // 增加重试计数
+            syncStatus.retryCount++;
+            
+            // 如果重试次数小于3次，延迟重试
+            if (syncStatus.retryCount < 3) {
+                this.showSyncStatus(`同步失败，${syncStatus.retryCount}秒后重试`, '⚠️', '#ffc107');
+                setTimeout(() => {
+                    syncStatus.isSyncing = false;
+                    this.syncToServer();
+                }, syncStatus.retryCount * 1000);
+            } else {
+                this.showSyncStatus('同步失败', '❌', '#dc3545');
+                setTimeout(() => this.hideSyncStatus(), 3000);
+            }
+            
             return false;
+        } finally {
+            // 标记为同步完成
+            syncStatus.isSyncing = false;
         }
     }
     
-    // 从服务器拉取数据
+    // 从服务器拉取数据（异步非阻塞）
     async pullFromServer() {
+        // 如果正在同步，跳过
+        if (syncStatus.isSyncing) {
+            console.log('[pullFromServer] 正在同步中，跳过');
+            return false;
+        }
+        
         console.log('[pullFromServer] 开始从服务器拉取数据');
         
         // 检查网络连接
@@ -286,12 +364,19 @@ class SyncManager {
         }
         
         try {
+            // 设置超时
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), SYNC_CONFIG.pingTimeout);
+            
             const response = await fetch(`${this.serverUrl}/notes.json`, {
                 method: 'GET',
                 headers: {
                     'Content-Type': 'application/json'
-                }
+                },
+                signal: controller.signal
             });
+            
+            clearTimeout(timeoutId);
             
             if (!response.ok) {
                 throw new Error(`拉取失败: ${response.statusText}`);
@@ -303,18 +388,26 @@ class SyncManager {
             // 合并数据
             const mergedNotes = this.mergeData(notesData, remoteNotes);
             
-            // 更新本地数据
-            notesData = mergedNotes;
-            localStorage.setItem('notes', JSON.stringify(notesData));
+            // 检查是否有变化
+            const hasChanges = JSON.stringify(mergedNotes) !== JSON.stringify(notesData);
             
-            // 更新UI
-            renderNotes();
+            if (hasChanges) {
+                // 更新本地数据
+                notesData = mergedNotes;
+                localStorage.setItem('notes', JSON.stringify(notesData));
+                
+                // 更新UI
+                renderNotes();
+                
+                console.log('[pullFromServer] 数据有变化，已更新');
+            } else {
+                console.log('[pullFromServer] 数据无变化');
+            }
             
             // 更新最后同步时间
             this.lastSync = new Date().toISOString();
             localStorage.setItem('lastSync', this.lastSync);
             
-            console.log('[pullFromServer] 数据拉取并合并成功');
             return true;
         } catch (error) {
             console.error('[pullFromServer] 拉取失败:', error);
@@ -851,17 +944,19 @@ document.addEventListener('DOMContentLoaded', function() {
     // 初始化设置页面显示
     initSettingsDisplay();
     
-    // 启动同步检查
+    // 启动同步检查（延长到5分钟）
     setInterval(() => {
-        if (syncManager) {
+        if (syncManager && navigator.onLine && !syncStatus.isSyncing) {
             syncManager.pullFromServer();
         }
-    }, SYNC_CONFIG.syncInterval);
+    }, 300000); // 5分钟同步一次
     
-    // 初始拉取数据
-    if (syncManager) {
-        syncManager.pullFromServer();
-    }
+    // 初始拉取数据（延迟5秒，避免阻塞页面加载）
+    setTimeout(() => {
+        if (syncManager && navigator.onLine) {
+            syncManager.pullFromServer();
+        }
+    }, 5000);
 });
 
 // 处理滚动事件，控制用户信息栏显示/隐藏
@@ -1190,20 +1285,24 @@ async function handleInsertMedia(file, type) {
             if (statusBar) {
                 statusBar.style.display = 'block';
                 statusBar.style.background = '#17a2b8';
-                statusBar.innerHTML = '<span id="sync-status-text">正在压缩图片...</span><span id="sync-status-icon">🖼️</span>';
+                statusBar.innerHTML = '<span id="sync-status-text">正在处理图片...</span><span id="sync-status-icon">🖼️</span>';
             }
             
-            // 压缩图片
-            const compressedData = await compressImage(file);
+            // 直接使用FileReader读取图片（不压缩，避免压缩失败）
+            const reader = new FileReader();
+            const base64Data = await new Promise((resolve, reject) => {
+                reader.onload = (e) => resolve(e.target.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
             
-            // 如果在线，上传到服务器
-            let finalUrl = compressedData;
-            if (navigator.onLine && syncManager) {
-                statusBar.innerHTML = '<span id="sync-status-text">正在上传图片...</span><span id="sync-status-icon">📤</span>';
-                const uploadResult = await syncManager.uploadImage(compressedData, file.name);
-                if (uploadResult.success && uploadResult.url) {
-                    finalUrl = uploadResult.url;
-                }
+            // 尝试压缩图片，如果失败则使用原图
+            let finalUrl = base64Data;
+            try {
+                finalUrl = await compressImage(file);
+            } catch (compressError) {
+                console.warn('[handleInsertMedia] 图片压缩失败，使用原图:', compressError);
+                finalUrl = base64Data;
             }
             
             // 插入图片到编辑器
@@ -1213,6 +1312,8 @@ async function handleInsertMedia(file, type) {
             if (statusBar) {
                 statusBar.style.display = 'none';
             }
+            
+            console.log('[handleInsertMedia] 图片插入成功');
         } catch (error) {
             console.error('[handleInsertMedia] 处理图片失败:', error);
             alert('图片处理失败，请重试！');
@@ -1297,7 +1398,7 @@ function insertMediaIntoEditor(content, type, fileName) {
     editor.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
-// 添加笔记
+// 添加笔记（乐观更新）
 function addNote() {
     const title = document.getElementById('note-title').value;
     const content = document.getElementById('note-content').innerHTML;
@@ -1314,28 +1415,24 @@ function addNote() {
         author: currentUser.nickname,
         comments: [],
         createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
+        syncStatus: 'pending' // 标记为待同步状态
     };
     
-    // 添加到数据缓存
+    // 乐观更新：立即添加到数据缓存并渲染
     notesData.unshift(newNote);
-    
-    // 保存到localStorage
     localStorage.setItem('notes', JSON.stringify(notesData));
-    
-    // 使用SyncManager进行同步
-    if (syncManager) {
-        syncManager.addToQueue(newNote);
-        syncManager.syncToServer();
-    }
     
     // 重置表单并关闭模态框
     document.getElementById('note-form').reset();
     document.getElementById('note-content').innerHTML = '';
     document.getElementById('note-modal').classList.remove('show');
     
-    // 重新渲染笔记列表
+    // 立即渲染笔记列表（乐观更新）
     renderNotes();
+    
+    // 异步同步到服务器（不阻塞UI）
+    debouncedSync(newNote);
 }
 
 // 渲染笔记列表
