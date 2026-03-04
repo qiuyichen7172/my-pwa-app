@@ -290,6 +290,46 @@ app.put('/notes.json', (req, res) => {
     }
 });
 
+// API端点 - 获取单个笔记详情
+app.get('/notes/:noteId', (req, res) => {
+    console.log(`[GET /notes/:noteId] 收到获取笔记详情请求: ${req.params.noteId}`);
+    
+    const noteId = req.params.noteId;
+    
+    if (!noteId) {
+        return res.status(400).json({ 
+            error: '参数缺失',
+            message: '请提供笔记ID' 
+        });
+    }
+    
+    initDataFile();
+    
+    try {
+        // 读取现有数据
+        const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+        
+        // 查找笔记
+        const note = data.notes?.find(note => note.id === noteId);
+        
+        if (!note) {
+            return res.status(404).json({ 
+                error: '笔记不存在',
+                message: `找不到ID为 ${noteId} 的笔记` 
+            });
+        }
+        
+        console.log(`[GET /notes/:noteId] 成功获取笔记详情: ${noteId}`);
+        res.json(note);
+    } catch (error) {
+        console.error('[GET /notes/:noteId] 获取笔记详情失败:', error);
+        res.status(500).json({ 
+            error: '获取笔记详情失败',
+            message: '无法获取笔记数据' 
+        });
+    }
+});
+
 // API端点 - 删除服务器上的笔记
 app.delete('/notes/:noteId', (req, res) => {
     console.log(`[DELETE /notes/:noteId] 收到删除笔记请求: ${req.params.noteId}`);

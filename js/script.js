@@ -839,14 +839,17 @@ function displayServerNotes(container, notes, statusBar, isExample = false) {
                 const excerpt = textContent.trim().substring(0, 50) + (textContent.length > 50 ? '...' : '');
                 
                 return `
-                    <div style="margin-bottom: 0.5rem; padding: 0.5rem; background: white; border: 1px solid #e0e0e0; border-radius: 4px; display: flex; justify-content: space-between; align-items: flex-start; cursor: pointer;" onclick="viewNoteDetail('${note.id}')" title="点击查看笔记详情">
-                        <div style="flex: 1;">
+                    <div class="server-note-item" style="margin-bottom: 0.5rem; padding: 0.5rem; background: white; border: 1px solid #e0e0e0; border-radius: 4px; display: flex; justify-content: space-between; align-items: flex-start; position: relative;">
+                        <div style="flex: 1; cursor: pointer;" onclick="viewNoteDetail('${note.id}')" title="点击查看笔记详情">
                             <div style="font-weight: bold; margin-bottom: 0.25rem;">${note.title || '无标题'}</div>
                             <div style="font-size: 0.8rem; color: #666; margin-bottom: 0.25rem;">${note.author} · ${formatDate(note.createdAt)}</div>
                             <div style="font-size: 0.8rem; color: #999;">${excerpt}</div>
                             ${isExample ? '<div style="font-size: 0.8rem; color: #17a2b8; margin-top: 0.25rem;">（示例数据）</div>' : ''}
                         </div>
-                        <button class="btn-primary" onclick="event.stopPropagation(); ${isExample ? 'alert(\'示例数据无法删除\')' : `deleteServerNote('${note.id}')`}" style="background: #dc3545; font-size: 0.8rem; padding: 0.25rem 0.5rem;">🗑️ 删除</button>
+                        <div style="display: flex; gap: 0.25rem; z-index: 10;">
+                            <button class="server-note-view-btn" onclick="event.stopPropagation(); viewNoteDetail('${note.id}')" style="background: #17a2b8; color: white; border: none; border-radius: 4px; font-size: 0.8rem; padding: 0.25rem 0.5rem; cursor: pointer; display: inline-block !important; visibility: visible !important;">👁️ 查看</button>
+                            <button class="server-note-delete-btn" onclick="event.stopPropagation(); ${isExample ? 'alert(\'示例数据无法删除\')' : `deleteServerNote('${note.id}')`}" style="background: #dc3545; color: white; border: none; border-radius: 4px; font-size: 0.8rem; padding: 0.25rem 0.5rem; cursor: pointer;">🗑️ 删除</button>
+                        </div>
                     </div>
                 `;
             }).join('');
@@ -924,60 +927,93 @@ async function fetchServerNote(noteId) {
 function showFullNote(note) {
     console.log('[showFullNote] 显示完整笔记:', note.id);
     
-    // 查找或创建完整笔记模态框
-    let fullNoteModal = document.getElementById('full-note-modal');
-    if (!fullNoteModal) {
-        // 如果模态框不存在，创建一个
-        fullNoteModal = document.createElement('div');
-        fullNoteModal.id = 'full-note-modal';
-        fullNoteModal.className = 'full-note-modal';
-        fullNoteModal.innerHTML = `
-            <div class="full-note-content">
-                <button class="close-full-note">&times;</button>
-                <div class="full-note-header">
-                    <h2 class="full-note-title"></h2>
-                    <p class="full-note-meta"></p>
-                </div>
-                <div class="full-note-body"></div>
+    const modal = document.getElementById('full-note-modal');
+    const titleEl = modal.querySelector('.full-note-title');
+    const metaEl = modal.querySelector('.full-note-meta');
+    const bodyEl = modal.querySelector('.full-note-body');
+    const commentsEl = modal.querySelector('.comments-section');
+    
+    // 设置笔记内容
+    titleEl.textContent = note.title || '无标题';
+    metaEl.innerHTML = `
+        <span class="note-author">✍️ ${note.author || '未知作者'}</span>
+        <span class="note-date">${formatDate(note.createdAt)}</span>
+    `;
+    bodyEl.innerHTML = note.content || '';
+    
+    // 设置留言内容
+    commentsEl.innerHTML = `
+        <h4>💬 留言 (${note.comments ? note.comments.length : 0})</h4>
+        ${note.comments && note.comments.length > 0 ? `
+            <div class="comments">
+                ${note.comments.map(comment => `
+                    <div class="comment">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                            <div class="comment-author">${comment.author}</div>
+                            <div style="display: flex; gap: 0.5rem;">
+                                <button class="comment-btn reply-btn" onclick="replyToComment('${note.id}', '${comment.id}', '${comment.author}')" title="回复">
+                                    💬
+                                </button>
+                                ${comment.author === (currentUser ? currentUser.nickname : '') ? `
+                                    <button class="comment-btn delete-btn" onclick="deleteComment('${note.id}', '${comment.id}')" title="删除">
+                                        🗑️
+                                    </button>
+                                ` : ''}
+                            </div>
+                        </div>
+                        <div class="comment-content">${comment.content}</div>
+                        <div class="comment-date">${formatDate(comment.createdAt)}</div>
+                        
+                        <!-- 子回复层级 -->
+                        ${comment.replies && comment.replies.length > 0 ? `
+                            <div class="comment-replies">
+                                ${comment.replies.map(reply => `
+                                    <div class="comment reply">
+                                        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                                            <div class="comment-author">${reply.author} 回复 ${reply.parentAuthor}</div>
+                                            <div style="display: flex; gap: 0.5rem;">
+                                                <button class="comment-btn reply-btn" onclick="replyToComment('${note.id}', '${comment.id}', '${reply.author}')" title="回复">
+                                                    💬
+                                                </button>
+                                                ${reply.author === (currentUser ? currentUser.nickname : '') ? `
+                                                    <button class="comment-btn delete-btn" onclick="deleteReply('${note.id}', '${comment.id}', '${reply.id}')" title="删除">
+                                                        🗑️
+                                                    </button>
+                                                ` : ''}
+                                            </div>
+                                        </div>
+                                        <div class="comment-content">${reply.content}</div>
+                                        <div class="comment-date">${formatDate(reply.createdAt)}</div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        ` : ''}
+                    </div>
+                `).join('')}
             </div>
-        `;
-        document.body.appendChild(fullNoteModal);
+        ` : '<p style="color: #999; font-style: italic;">暂无留言</p>'}
         
-        // 添加关闭事件
-        const closeBtn = fullNoteModal.querySelector('.close-full-note');
-        if (closeBtn) {
-            closeBtn.addEventListener('click', () => {
-                fullNoteModal.style.display = 'none';
-            });
-        }
-        
-        // 点击模态框外部关闭
-        fullNoteModal.addEventListener('click', (e) => {
-            if (e.target === fullNoteModal) {
-                fullNoteModal.style.display = 'none';
-            }
+        <div class="add-comment">
+            <div id="reply-to" style="display: none; margin-bottom: 0.5rem; padding: 0.5rem; background: #f8f9fa; border-radius: 5px; font-size: 0.9rem;"></div>
+            <textarea placeholder="写下你的留言..." id="comment-${note.id}"></textarea>
+            <button class="btn-primary" onclick="addComment('${note.id}', true)">发送留言</button>
+            <button class="btn-primary" id="cancel-reply" style="background: #6c757d; margin-left: 0.5rem; display: none;">取消回复</button>
+        </div>
+    `;
+    
+    // 绑定取消回复按钮事件
+    const cancelReplyBtn = document.getElementById('cancel-reply');
+    if (cancelReplyBtn) {
+        cancelReplyBtn.addEventListener('click', () => {
+            document.getElementById('reply-to').style.display = 'none';
+            cancelReplyBtn.style.display = 'none';
+            document.getElementById(`comment-${note.id}`).setAttribute('data-reply-to', '');
+            document.getElementById(`comment-${note.id}`).placeholder = '写下你的留言...';
         });
     }
     
-    // 更新笔记内容
-    const titleEl = fullNoteModal.querySelector('.full-note-title');
-    const metaEl = fullNoteModal.querySelector('.full-note-meta');
-    const bodyEl = fullNoteModal.querySelector('.full-note-body');
-    
-    if (titleEl) {
-        titleEl.textContent = note.title || '无标题';
-    }
-    
-    if (metaEl) {
-        metaEl.textContent = `${note.author || '未知作者'} · ${formatDate(note.createdAt)}`;
-    }
-    
-    if (bodyEl) {
-        bodyEl.innerHTML = note.content || '';
-    }
-    
     // 显示模态框
-    fullNoteModal.style.display = 'flex';
+    modal.classList.add('active');
 }
 
 // 删除服务器上的笔记
@@ -1821,9 +1857,16 @@ function renderNotes() {
     
     // 确保notesData是数组
     if (!Array.isArray(notesData)) {
-        console.error('[renderNotes] notesData不是数组，重置为空数组');
-        notesData = [];
-        localStorage.setItem('notes', JSON.stringify(notesData));
+        console.error('[renderNotes] notesData不是数组，尝试从localStorage重新加载');
+        // 尝试从localStorage重新加载数据，而不是直接重置为空数组
+        const storedNotes = localStorage.getItem('notes');
+        notesData = storedNotes ? JSON.parse(storedNotes) : [];
+        // 再次检查是否为数组
+        if (!Array.isArray(notesData)) {
+            console.error('[renderNotes] 从localStorage加载的数据也不是数组，重置为空数组');
+            notesData = [];
+            localStorage.setItem('notes', JSON.stringify(notesData));
+        }
     }
     
     // 根据当前筛选条件过滤笔记
@@ -1870,9 +1913,6 @@ function renderNotes() {
                         <div>
                             <div class="note-header">
                                 <h3 class="note-title">${note.title || '无标题'}</h3>
-                                <button class="delete-note-btn" onclick="event.stopPropagation(); deleteNote('${note.id}')" title="删除笔记">
-                                    🗑️
-                                </button>
                             </div>
                             <p class="note-excerpt">${excerpt}</p>
                         </div>
@@ -1972,6 +2012,13 @@ function openFullNote(noteId) {
             <textarea placeholder="写下你的留言..." id="comment-${note.id}"></textarea>
             <button class="btn-primary" onclick="addComment('${note.id}', true)">发送留言</button>
             <button class="btn-primary" id="cancel-reply" style="background: #6c757d; margin-left: 0.5rem; display: none;">取消回复</button>
+        </div>
+        
+        <!-- 删除按钮放在右下角 -->
+        <div style="display: flex; justify-content: flex-end; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e0e0e0;">
+            <button class="btn-primary" onclick="deleteNote('${note.id}')" style="background: #dc3545;">
+                🗑️ 删除笔记
+            </button>
         </div>
     `;
     
@@ -2130,25 +2177,55 @@ function deleteReply(noteId, commentId, replyId) {
 
 // 删除笔记
 function deleteNote(noteId) {
-    if (confirm('确定要删除这篇笔记吗？删除后无法恢复！')) {
+    console.log('[deleteNote] 开始删除流程，noteId:', noteId);
+    
+    // 显示确认对话框
+    const isConfirmed = window.confirm('确定要删除这篇笔记吗？删除后无法恢复！');
+    console.log('[deleteNote] 用户确认结果:', isConfirmed);
+    
+    // 只有在用户确认后才执行删除操作
+    if (isConfirmed === true) {
+        console.log('[deleteNote] 用户确认删除，开始执行删除操作');
+        
         // 找到要删除的笔记
         const noteToDelete = notesData.find(note => note.id === noteId);
         
-        // 从数据缓存中删除笔记
-        notesData = notesData.filter(note => note.id !== noteId);
-        
-        // 保存到localStorage
-        localStorage.setItem('notes', JSON.stringify(notesData));
-        
-        // 添加到待同步队列
-        if (noteToDelete && syncManager) {
-            syncManager.addToSyncQueue('delete', 'note', noteToDelete);
+        if (noteToDelete) {
+            console.log('[deleteNote] 找到要删除的笔记:', noteToDelete.id);
+            
+            // 从数据缓存中删除笔记
+            const initialLength = notesData.length;
+            notesData = notesData.filter(note => note.id !== noteId);
+            console.log('[deleteNote] 从数据缓存删除后，笔记数量从', initialLength, '变为', notesData.length);
+            
+            // 保存到localStorage
+            localStorage.setItem('notes', JSON.stringify(notesData));
+            console.log('[deleteNote] 已保存到localStorage');
+            
+            // 添加到待同步队列
+            if (syncManager) {
+                syncManager.addToSyncQueue('delete', 'note', noteToDelete);
+                console.log('[deleteNote] 已添加到同步队列');
+            }
+            
+            // 关闭模态框
+            const modal = document.getElementById('full-note-modal');
+            if (modal) {
+                modal.classList.remove('active');
+                console.log('[deleteNote] 已关闭模态框');
+            }
+            
+            // 重新渲染笔记列表
+            renderNotes();
+            console.log('[deleteNote] 已重新渲染笔记列表');
+            
+            alert('笔记已成功删除！');
+        } else {
+            console.error('[deleteNote] 未找到要删除的笔记:', noteId);
+            alert('删除失败：未找到该笔记！');
         }
-        
-        // 重新渲染笔记列表
-        renderNotes();
-        
-        alert('笔记已成功删除！');
+    } else {
+        console.log('[deleteNote] 用户取消了删除操作');
     }
 }
 

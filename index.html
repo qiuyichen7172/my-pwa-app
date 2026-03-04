@@ -40,7 +40,6 @@
             <div style="display: flex; gap: 1rem;">
                 <button id="settings-btn" class="btn-primary" style="background: #6c757d;">⚙️ 登录设置</button>
                 <button id="server-settings-btn" class="btn-primary" style="background: #6c757d;">🖥️ 服务器设置</button>
-                <button id="clear-cache-btn" class="btn-primary" style="background: #6c757d;">🔄 清除缓存</button>
                 <button id="logout-btn" class="logout-btn">退出登录</button>
             </div>
         </div>
@@ -94,6 +93,7 @@
                     <button class="btn-primary" onclick="uploadToServer()" style="background: #28a745;">⬆️ 上传到服务器</button>
                     <button class="btn-primary" onclick="downloadFromServer()" style="background: #17a2b8;">⬇️ 从服务器下载</button>
                     <button class="btn-primary" onclick="syncBothWays()" style="background: #6c757d;">🔄 双向同步</button>
+                    <button id="clear-cache-btn" class="btn-primary" style="background: #dc3545;">🗑️ 清除缓存</button>
                 </div>
                 <div style="margin-top: 0.5rem; padding: 0.5rem; background: #e9ecef; border-radius: 4px; font-size: 0.8rem; color: #666;">
                     <p id="sync-stats" style="margin: 0;">本地笔记: <span id="local-count">0</span> | 服务器笔记: <span id="server-count">0</span></p>
