@@ -577,17 +577,326 @@ class SyncManager {
 // 检查服务器是否可用
 // 同步数据
 // 初始化设置页面显示
-// 立即同步数据
-function syncData() {
-    if (syncManager) {
-        syncManager.syncToServer().then(success => {
-            if (success) {
-                console.log('[syncData] 同步成功');
-            } else {
-                console.log('[syncData] 同步失败');
+// 上传到服务器
+async function uploadToServer() {
+    if (!syncManager) return;
+    
+    console.log('[uploadToServer] 开始上传到服务器');
+    
+    try {
+        const statusBar = document.getElementById('sync-status-bar');
+        if (statusBar) {
+            statusBar.style.display = 'block';
+            statusBar.style.background = '#28a745';
+            statusBar.innerHTML = '<span id="sync-status-text">正在上传到服务器...</span><span id="sync-status-icon">⬆️</span>';
+        }
+        
+        const success = await syncManager.syncToServer();
+        
+        if (success) {
+            if (statusBar) {
+                statusBar.innerHTML = '<span id="sync-status-text">上传成功！</span><span id="sync-status-icon">✅</span>';
+                setTimeout(() => statusBar.style.display = 'none', 2000);
             }
-        });
+            updateSyncStats();
+        } else {
+            if (statusBar) {
+                statusBar.style.background = '#dc3545';
+                statusBar.innerHTML = '<span id="sync-status-text">上传失败！</span><span id="sync-status-icon">❌</span>';
+                setTimeout(() => statusBar.style.display = 'none', 3000);
+            }
+        }
+    } catch (error) {
+        console.error('[uploadToServer] 上传失败:', error);
+        const statusBar = document.getElementById('sync-status-bar');
+        if (statusBar) {
+            statusBar.style.background = '#dc3545';
+            statusBar.innerHTML = '<span id="sync-status-text">上传失败！</span><span id="sync-status-icon">❌</span>';
+            setTimeout(() => statusBar.style.display = 'none', 3000);
+        }
     }
+}
+
+// 从服务器下载
+async function downloadFromServer() {
+    if (!syncManager) return;
+    
+    console.log('[downloadFromServer] 开始从服务器下载');
+    
+    try {
+        const statusBar = document.getElementById('sync-status-bar');
+        if (statusBar) {
+            statusBar.style.display = 'block';
+            statusBar.style.background = '#17a2b8';
+            statusBar.innerHTML = '<span id="sync-status-text">正在从服务器下载...</span><span id="sync-status-icon">⬇️</span>';
+        }
+        
+        const success = await syncManager.pullFromServer();
+        
+        if (success) {
+            if (statusBar) {
+                statusBar.innerHTML = '<span id="sync-status-text">下载成功！</span><span id="sync-status-icon">✅</span>';
+                setTimeout(() => statusBar.style.display = 'none', 2000);
+            }
+            updateSyncStats();
+        } else {
+            if (statusBar) {
+                statusBar.style.background = '#dc3545';
+                statusBar.innerHTML = '<span id="sync-status-text">下载失败！</span><span id="sync-status-icon">❌</span>';
+                setTimeout(() => statusBar.style.display = 'none', 3000);
+            }
+        }
+    } catch (error) {
+        console.error('[downloadFromServer] 下载失败:', error);
+        const statusBar = document.getElementById('sync-status-bar');
+        if (statusBar) {
+            statusBar.style.background = '#dc3545';
+            statusBar.innerHTML = '<span id="sync-status-text">下载失败！</span><span id="sync-status-icon">❌</span>';
+            setTimeout(() => statusBar.style.display = 'none', 3000);
+        }
+    }
+}
+
+// 双向同步
+async function syncBothWays() {
+    if (!syncManager) return;
+    
+    console.log('[syncBothWays] 开始双向同步');
+    
+    try {
+        const statusBar = document.getElementById('sync-status-bar');
+        if (statusBar) {
+            statusBar.style.display = 'block';
+            statusBar.style.background = '#6c757d';
+            statusBar.innerHTML = '<span id="sync-status-text">正在双向同步...</span><span id="sync-status-icon">🔄</span>';
+        }
+        
+        // 先上传本地数据到服务器
+        await syncManager.syncToServer();
+        
+        // 再从服务器下载最新数据
+        const success = await syncManager.pullFromServer();
+        
+        if (success) {
+            if (statusBar) {
+                statusBar.innerHTML = '<span id="sync-status-text">双向同步成功！</span><span id="sync-status-icon">✅</span>';
+                setTimeout(() => statusBar.style.display = 'none', 2000);
+            }
+            updateSyncStats();
+        } else {
+            if (statusBar) {
+                statusBar.style.background = '#dc3545';
+                statusBar.innerHTML = '<span id="sync-status-text">双向同步失败！</span><span id="sync-status-icon">❌</span>';
+                setTimeout(() => statusBar.style.display = 'none', 3000);
+            }
+        }
+    } catch (error) {
+        console.error('[syncBothWays] 双向同步失败:', error);
+        const statusBar = document.getElementById('sync-status-bar');
+        if (statusBar) {
+            statusBar.style.background = '#dc3545';
+            statusBar.innerHTML = '<span id="sync-status-text">双向同步失败！</span><span id="sync-status-icon">❌</span>';
+            setTimeout(() => statusBar.style.display = 'none', 3000);
+        }
+    }
+}
+
+// 查看服务器笔记
+async function viewServerNotes() {
+    if (!syncManager) return;
+    
+    console.log('[viewServerNotes] 开始查看服务器笔记');
+    
+    const container = document.getElementById('server-notes-container');
+    const statusBar = document.getElementById('sync-status-bar');
+    
+    if (container) {
+        container.innerHTML = '<p style="color: #17a2b8; text-align: center;">正在加载服务器笔记...</p>';
+    }
+    
+    try {
+        if (statusBar) {
+            statusBar.style.display = 'block';
+            statusBar.style.background = '#17a2b8';
+            statusBar.innerHTML = '<span id="sync-status-text">正在获取服务器笔记...</span><span id="sync-status-icon">📋</span>';
+        }
+        
+        const response = await fetch(`${syncManager.getServerUrl()}/notes.json`);
+        if (!response.ok) {
+            throw new Error(`获取失败: ${response.statusText}`);
+        }
+        
+        const serverNotes = await response.json();
+        console.log('[viewServerNotes] 服务器笔记数量:', serverNotes.length);
+        
+        displayServerNotes(container, serverNotes, statusBar, false);
+        
+        // 更新统计信息
+        updateSyncStats();
+    } catch (error) {
+        console.error('[viewServerNotes] 获取服务器笔记失败:', error);
+        
+        // 服务器不可用时，显示示例数据
+        const exampleNotes = generateServerNotesOfflineExample();
+        displayServerNotes(container, exampleNotes, statusBar, true);
+    }
+}
+
+// 显示服务器笔记
+function displayServerNotes(container, notes, statusBar, isExample = false) {
+    if (container) {
+        if (notes.length === 0) {
+            container.innerHTML = '<p style="color: #999; text-align: center;">服务器上没有笔记</p>';
+        } else {
+            const notesHtml = notes.map(note => {
+                // 生成笔记摘要
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = note.content || '';
+                const textContent = tempDiv.textContent || tempDiv.innerText || '';
+                const excerpt = textContent.trim().substring(0, 50) + (textContent.length > 50 ? '...' : '');
+                
+                return `
+                    <div style="margin-bottom: 0.5rem; padding: 0.5rem; background: white; border: 1px solid #e0e0e0; border-radius: 4px; display: flex; justify-content: space-between; align-items: flex-start;">
+                        <div style="flex: 1;">
+                            <div style="font-weight: bold; margin-bottom: 0.25rem;">${note.title || '无标题'}</div>
+                            <div style="font-size: 0.8rem; color: #666; margin-bottom: 0.25rem;">${note.author} · ${formatDate(note.createdAt)}</div>
+                            <div style="font-size: 0.8rem; color: #999;">${excerpt}</div>
+                            ${isExample ? '<div style="font-size: 0.8rem; color: #17a2b8; margin-top: 0.25rem;">（示例数据）</div>' : ''}
+                        </div>
+                        <button class="btn-primary" onclick="${isExample ? 'alert(\'示例数据无法删除\')' : `deleteServerNote('${note.id}')`}" style="background: #dc3545; font-size: 0.8rem; padding: 0.25rem 0.5rem;">🗑️ 删除</button>
+                    </div>
+                `;
+            }).join('');
+            
+            container.innerHTML = notesHtml;
+        }
+    }
+    
+    if (statusBar) {
+        if (isExample) {
+            statusBar.innerHTML = '<span id="sync-status-text">服务器不可用，显示示例数据</span><span id="sync-status-icon">📋</span>';
+        } else {
+            statusBar.innerHTML = `<span id="sync-status-text">获取服务器笔记成功！共 ${notes.length} 条</span><span id="sync-status-icon">✅</span>`;
+        }
+        setTimeout(() => statusBar.style.display = 'none', 2000);
+    }
+}
+
+// 删除服务器上的笔记
+async function deleteServerNote(noteId) {
+    if (!syncManager || !confirm('确定要删除服务器上的这条笔记吗？此操作不可恢复！')) return;
+    
+    console.log(`[deleteServerNote] 删除服务器笔记: ${noteId}`);
+    
+    const statusBar = document.getElementById('sync-status-bar');
+    
+    try {
+        if (statusBar) {
+            statusBar.style.display = 'block';
+            statusBar.style.background = '#dc3545';
+            statusBar.innerHTML = '<span id="sync-status-text">正在删除服务器笔记...</span><span id="sync-status-icon">🗑️</span>';
+        }
+        
+        const response = await fetch(`${syncManager.getServerUrl()}/notes/${noteId}`, {
+            method: 'DELETE'
+        });
+        
+        if (!response.ok) {
+            throw new Error(`删除失败: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        console.log('[deleteServerNote] 删除成功:', result);
+        
+        if (statusBar) {
+            statusBar.innerHTML = '<span id="sync-status-text">删除服务器笔记成功！</span><span id="sync-status-icon">✅</span>';
+            setTimeout(() => statusBar.style.display = 'none', 2000);
+        }
+        
+        // 重新加载服务器笔记列表
+        viewServerNotes();
+        updateSyncStats();
+    } catch (error) {
+        console.error('[deleteServerNote] 删除服务器笔记失败:', error);
+        
+        if (statusBar) {
+            statusBar.style.background = '#dc3545';
+            statusBar.innerHTML = '<span id="sync-status-text">删除服务器笔记失败！</span><span id="sync-status-icon">❌</span>';
+            setTimeout(() => statusBar.style.display = 'none', 3000);
+        }
+    }
+}
+
+// 生成服务器笔记离线示例
+function generateServerNotesOfflineExample() {
+    // 生成示例笔记数据
+    const exampleNotes = [
+        {
+            id: 'example-1',
+            title: '示例笔记 1',
+            content: '<p>这是服务器上的第一条示例笔记</p><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==" alt="示例图片">',
+            author: '用户1',
+            comments: [],
+            createdAt: '2026-03-01T10:00:00.000Z',
+            updatedAt: '2026-03-01T10:00:00.000Z'
+        },
+        {
+            id: 'example-2',
+            title: '示例笔记 2',
+            content: '<p>这是服务器上的第二条示例笔记</p>',
+            author: '用户2',
+            comments: [],
+            createdAt: '2026-03-02T14:30:00.000Z',
+            updatedAt: '2026-03-02T14:30:00.000Z'
+        },
+        {
+            id: 'example-3',
+            title: '示例笔记 3',
+            content: '<p>这是服务器上的第三条示例笔记，包含了一些详细内容</p><p>这是第二行内容</p>',
+            author: '用户1',
+            comments: [],
+            createdAt: '2026-03-03T09:15:00.000Z',
+            updatedAt: '2026-03-03T09:15:00.000Z'
+        }
+    ];
+    
+    return exampleNotes;
+}
+
+// 更新同步统计信息
+async function updateSyncStats() {
+    // 更新本地笔记数量
+    const localCountEl = document.getElementById('local-count');
+    if (localCountEl) {
+        localCountEl.textContent = notesData.length;
+    }
+    
+    // 获取服务器笔记数量
+    try {
+        if (syncManager && navigator.onLine) {
+            const response = await fetch(`${syncManager.getServerUrl()}/notes.json`);
+            if (response.ok) {
+                const serverNotes = await response.json();
+                const serverCountEl = document.getElementById('server-count');
+                if (serverCountEl) {
+                    serverCountEl.textContent = serverNotes.length;
+                }
+            }
+        }
+    } catch (error) {
+        console.error('[updateSyncStats] 获取服务器笔记数量失败:', error);
+    }
+    
+    // 更新最后同步时间
+    const lastSyncDisplay = document.getElementById('last-sync-display');
+    if (lastSyncDisplay) {
+        lastSyncDisplay.textContent = syncManager.getLastSync() || '从未同步';
+    }
+}
+
+// 立即同步数据（兼容旧版）
+async function syncData() {
+    await syncBothWays();
 }
 
 // 图片压缩函数
@@ -666,19 +975,15 @@ document.addEventListener('DOMContentLoaded', function() {
     // 初始化设置页面显示
     initSettingsDisplay();
     
-    // 启动同步检查（延长到5分钟）
-    setInterval(() => {
-        if (syncManager && navigator.onLine && !syncStatus.isSyncing) {
-            syncManager.pullFromServer();
-        }
-    }, 300000); // 5分钟同步一次
+    // 更新同步统计信息
+    updateSyncStats();
     
-    // 初始拉取数据（延迟5秒，避免阻塞页面加载）
-    setTimeout(() => {
+    // 初始双向同步（只执行一次，把本地未上传数据上传到服务器，把服务器未下载数据下载到本地）
+    setTimeout(async () => {
         if (syncManager && navigator.onLine) {
-            syncManager.pullFromServer();
+            await syncBothWays();
         }
-    }, 5000);
+    }, 3000); // 延迟3秒执行，避免阻塞页面加载
 });
 
 // 处理滚动事件，控制用户信息栏显示/隐藏
@@ -1001,15 +1306,15 @@ async function handleInsertMedia(file, type) {
     if (!file) return;
     
     if (type === 'image') {
+        // 显示加载状态
+        const statusBar = document.getElementById('sync-status-bar');
+        if (statusBar) {
+            statusBar.style.display = 'block';
+            statusBar.style.background = '#17a2b8';
+            statusBar.innerHTML = '<span id="sync-status-text">正在处理图片...</span><span id="sync-status-icon">🖼️</span>';
+        }
+        
         try {
-            // 显示加载状态
-            const statusBar = document.getElementById('sync-status-bar');
-            if (statusBar) {
-                statusBar.style.display = 'block';
-                statusBar.style.background = '#17a2b8';
-                statusBar.innerHTML = '<span id="sync-status-text">正在处理图片...</span><span id="sync-status-icon">🖼️</span>';
-            }
-            
             // 直接使用FileReader读取图片（不压缩，避免压缩失败）
             const reader = new FileReader();
             const base64Data = await new Promise((resolve, reject) => {
@@ -1030,20 +1335,26 @@ async function handleInsertMedia(file, type) {
             // 插入图片到编辑器
             insertMediaIntoEditor(finalUrl, type, file.name);
             
-            // 隐藏加载状态
+            // 显示成功状态
             if (statusBar) {
-                statusBar.style.display = 'none';
+                statusBar.style.background = '#28a745';
+                statusBar.innerHTML = '<span id="sync-status-text">图片插入成功！</span><span id="sync-status-icon">✅</span>';
+                setTimeout(() => {
+                    statusBar.style.display = 'none';
+                }, 2000);
             }
             
             console.log('[handleInsertMedia] 图片插入成功');
         } catch (error) {
             console.error('[handleInsertMedia] 处理图片失败:', error);
-            alert('图片处理失败，请重试！');
             
-            // 隐藏加载状态
-            const statusBar = document.getElementById('sync-status-bar');
+            // 显示失败状态
             if (statusBar) {
-                statusBar.style.display = 'none';
+                statusBar.style.background = '#dc3545';
+                statusBar.innerHTML = '<span id="sync-status-text">图片处理失败，请重试</span><span id="sync-status-icon">❌</span>';
+                setTimeout(() => {
+                    statusBar.style.display = 'none';
+                }, 3000);
             }
         }
     } else if (type === 'video') {

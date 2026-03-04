@@ -14,6 +14,9 @@ const DATA_FILE = path.join(__dirname, 'sync-data.json');
 app.use(cors());
 app.use(express.json({ limit: '10mb' })); // 增加请求体大小限制
 
+// 静态文件服务 - 提供HTML、CSS、JS等静态资源
+app.use(express.static(path.join(__dirname)));
+
 // 初始化数据文件
 function initDataFile() {
     if (!fs.existsSync(DATA_FILE)) {
@@ -266,6 +269,55 @@ app.put('/notes.json', (req, res) => {
         });
     }
 });
+
+// API端点 - 删除服务器上的笔记
+app.delete('/notes/:noteId', (req, res) => {
+    console.log(`[DELETE /notes/:noteId] 收到删除笔记请求: ${req.params.noteId}`);
+    
+    const noteId = req.params.noteId;
+    
+    if (!noteId) {
+        return res.status(400).json({ 
+            error: '参数缺失',
+            message: '请提供笔记ID' 
+        });
+    }
+    
+    initDataFile();
+    
+    try {
+        // 读取现有数据
+        const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+        
+        // 过滤掉要删除的笔记
+        const originalCount = data.notes?.length || 0;
+        data.notes = data.notes?.filter(note => note.id !== noteId) || [];
+        const newCount = data.notes.length;
+        
+        // 更新最后更新时间
+        data.lastUpdate = new Date().toISOString();
+        
+        // 保存数据
+        fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+        
+        console.log(`[DELETE /notes/:noteId] 删除成功，删除了 ${originalCount - newCount} 条笔记`);
+        res.json({ 
+            success: true, 
+            message: `成功删除笔记: ${noteId}`,
+            lastUpdate: data.lastUpdate,
+            totalNotes: newCount,
+            deletedCount: originalCount - newCount
+        });
+    } catch (error) {
+        console.error('[DELETE /notes/:noteId] 删除数据失败:', error);
+        res.status(500).json({ 
+            error: '删除数据失败',
+            message: '无法删除笔记数据' 
+        });
+    }
+});
+
+
 
 // API端点 - 上传图片（base64）
 app.post('/upload', (req, res) => {

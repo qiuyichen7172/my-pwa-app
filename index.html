@@ -79,7 +79,29 @@
                     <h4 style="margin-bottom: 0.5rem; color: #555;">📋 设备信息</h4>
                     <p style="color: #666;">设备ID：<code id="device-id-display" style="background: #e9ecef; padding: 0.25rem 0.5rem; border-radius: 4px; margin-left: 0.5rem;"></code></p>
                     <p style="color: #666;">最后同步：<span id="last-sync-display" style="margin-left: 0.5rem;">从未同步</span></p>
-                    <button class="btn-primary" onclick="syncData()" style="margin-top: 0.5rem;">立即同步</button>
+                    <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                        <button class="btn-primary" onclick="uploadToServer()" style="background: #28a745;">⬆️ 上传到服务器</button>
+                        <button class="btn-primary" onclick="downloadFromServer()" style="background: #17a2b8;">⬇️ 从服务器下载</button>
+                        <button class="btn-primary" onclick="syncBothWays()" style="background: #6c757d;">🔄 双向同步</button>
+                    </div>
+                    <div style="margin-top: 0.5rem; padding: 0.5rem; background: #e9ecef; border-radius: 4px; font-size: 0.8rem; color: #666;">
+                        <p id="sync-stats" style="margin: 0;">本地笔记: <span id="local-count">0</span> | 服务器笔记: <span id="server-count">0</span></p>
+                    </div>
+                </div>
+                
+                <!-- 服务器数据管理 -->
+                <div style="margin-top: 2rem; padding: 1rem; background: #f8f9fa; border-radius: 8px; font-size: 0.9rem;">
+                    <h4 style="margin-bottom: 0.5rem; color: #555;">🗄️ 服务器数据管理</h4>
+                    <p style="color: #666; margin-bottom: 1rem;">查看和管理服务器上的所有笔记</p>
+                    
+                    <div style="margin-bottom: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                        <button class="btn-primary" onclick="viewServerNotes()" style="background: #17a2b8;">📋 查看服务器笔记</button>
+                    </div>
+                    
+                    <!-- 服务器笔记列表 -->
+                    <div id="server-notes-container" style="max-height: 300px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 4px; padding: 0.5rem;">
+                        <p style="color: #999; text-align: center;">点击"查看服务器笔记"获取服务器上的笔记列表</p>
+                    </div>
                 </div>
             </div>
         </div>
