@@ -7,6 +7,10 @@ let syncManager = null;
 let notesData = [];
 let albumsData = [];
 let usersData = [];
+let deletedNotesData = []; // 已删除笔记列表
+
+// 自定义确认对话框相关变量
+let confirmCallback = null;
 
 // 固定账号初始密码和映射关系
 const ACCOUNT_MAPPING = {
@@ -86,18 +90,21 @@ function initData() {
         const storedNotes = localStorage.getItem('notes');
         const storedAlbums = localStorage.getItem('albums');
         const storedUsers = localStorage.getItem('users');
+        const storedDeletedNotes = localStorage.getItem('deletedNotes');
         
-        console.log('[initData] localStorage数据:', { storedNotes, storedAlbums, storedUsers });
+        console.log('[initData] localStorage数据:', { storedNotes, storedAlbums, storedUsers, storedDeletedNotes });
         
         // 安全解析localStorage数据
         notesData = storedNotes ? JSON.parse(storedNotes) : [];
         albumsData = storedAlbums ? JSON.parse(storedAlbums) : [];
         usersData = storedUsers ? JSON.parse(storedUsers) : [];
+        deletedNotesData = storedDeletedNotes ? JSON.parse(storedDeletedNotes) : [];
         
         // 确保数据类型正确
         notesData = Array.isArray(notesData) ? notesData : [];
         albumsData = Array.isArray(albumsData) ? albumsData : [];
         usersData = Array.isArray(usersData) ? usersData : [];
+        deletedNotesData = Array.isArray(deletedNotesData) ? deletedNotesData : [];
         
         // 初始化默认用户数据（如果不存在）
         if (usersData.length === 0) {
@@ -123,10 +130,30 @@ function initData() {
             localStorage.setItem('albums', JSON.stringify(albumsData));
         }
         
+        // 初始化已删除笔记数据（如果不存在）
+        if (deletedNotesData.length === 0) {
+            console.log('[initData] 初始化已删除笔记数据');
+            deletedNotesData = [];
+            localStorage.setItem('deletedNotes', JSON.stringify(deletedNotesData));
+        }
+        
+        // 自动清理：删除超过30天的删除记录
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        const beforeClean = deletedNotesData.length;
+        deletedNotesData = deletedNotesData.filter(item => {
+            return new Date(item.deletedAt) > thirtyDaysAgo;
+        });
+        if (beforeClean !== deletedNotesData.length) {
+            localStorage.setItem('deletedNotes', JSON.stringify(deletedNotesData));
+            console.log(`[initData] 自动清理了 ${beforeClean - deletedNotesData.length} 条过期删除记录`);
+        }
+        
         console.log('[initData] 初始化完成:', { 
             notesCount: notesData.length, 
             albumsCount: albumsData.length, 
-            usersCount: usersData.length
+            usersCount: usersData.length,
+            deletedNotesCount: deletedNotesData.length
         });
     } catch (error) {
         console.error('[initData] 初始化数据时发生错误:', error);
@@ -134,6 +161,7 @@ function initData() {
         notesData = [];
         albumsData = [];
         usersData = [];
+        deletedNotesData = [];
         localStorage.clear();
         console.log('[initData] 已重置所有数据');
     }
@@ -700,39 +728,55 @@ async function syncBothWays() {
             statusBar.innerHTML = '<span id="sync-status-text">正在双向同步...</span><span id="sync-status-icon">🔄</span>';
         }
         
-        // 获取服务器笔记
+        // 1. 先同步 deletedNotes（删除记录）
+        await syncDeletedNotes();
+        
+        // 2. 获取服务器笔记
         const response = await fetch(`${syncManager.getServerUrl()}/notes.json`);
         if (!response.ok) {
             throw new Error(`获取服务器笔记失败: ${response.statusText}`);
         }
         const serverNotes = await response.json();
         
-        // 获取本地笔记
+        // 3. 获取本地笔记
         const localNotes = notesData;
         
-        // 智能合并：找出本地缺少的服务器笔记和服务器缺少的本地笔记
-        const localNoteIds = new Set(localNotes.map(note => note.id));
-        const serverNoteIds = new Set(serverNotes.map(note => note.id));
+        // 4. 过滤掉已删除的笔记（关键步骤！）
+        const deletedNoteIds = new Set(deletedNotesData.map(item => item.id));
+        const filteredServerNotes = serverNotes.filter(note => !deletedNoteIds.has(note.id));
+        const filteredLocalNotes = localNotes.filter(note => !deletedNoteIds.has(note.id));
+        
+        console.log('[syncBothWays] 过滤已删除笔记:', {
+            deletedCount: deletedNoteIds.size,
+            serverBefore: serverNotes.length,
+            serverAfter: filteredServerNotes.length,
+            localBefore: localNotes.length,
+            localAfter: filteredLocalNotes.length
+        });
+        
+        // 5. 智能合并：找出本地缺少的服务器笔记和服务器缺少的本地笔记
+        const localNoteIds = new Set(filteredLocalNotes.map(note => note.id));
+        const serverNoteIds = new Set(filteredServerNotes.map(note => note.id));
         
         // 本地缺少的服务器笔记（需要下载）
-        const notesToDownload = serverNotes.filter(note => !localNoteIds.has(note.id));
+        const notesToDownload = filteredServerNotes.filter(note => !localNoteIds.has(note.id));
         
         // 服务器缺少的本地笔记（需要上传）
-        const notesToUpload = localNotes.filter(note => !serverNoteIds.has(note.id));
+        const notesToUpload = filteredLocalNotes.filter(note => !serverNoteIds.has(note.id));
         
         console.log('[syncBothWays] 同步分析:', {
-            localCount: localNotes.length,
-            serverCount: serverNotes.length,
+            localCount: filteredLocalNotes.length,
+            serverCount: filteredServerNotes.length,
             toDownload: notesToDownload.length,
             toUpload: notesToUpload.length
         });
         
         let success = true;
         
-        // 先上传本地缺少的笔记到服务器
+        // 6. 先上传本地缺少的笔记到服务器
         if (notesToUpload.length > 0) {
             // 创建合并后的笔记列表（保留服务器已有笔记，添加本地新笔记）
-            const mergedNotesForServer = [...serverNotes, ...notesToUpload];
+            const mergedNotesForServer = [...filteredServerNotes, ...notesToUpload];
             const uploadResponse = await fetch(`${syncManager.getServerUrl()}/notes.json`, {
                 method: 'PUT',
                 headers: {
@@ -747,16 +791,21 @@ async function syncBothWays() {
             }
         }
         
-        // 再下载服务器缺少的笔记到本地
+        // 7. 再下载服务器缺少的笔记到本地
         if (notesToDownload.length > 0) {
             // 合并本地笔记和服务器新笔记
-            const mergedNotesForLocal = [...localNotes, ...notesToDownload];
+            const mergedNotesForLocal = [...filteredLocalNotes, ...notesToDownload];
             
             // 更新本地数据
             notesData = mergedNotesForLocal;
             localStorage.setItem('notes', JSON.stringify(notesData));
             
             // 更新UI
+            renderNotes();
+        } else {
+            // 即使没有新笔记下载，也要更新本地数据（过滤掉已删除的）
+            notesData = filteredLocalNotes;
+            localStorage.setItem('notes', JSON.stringify(notesData));
             renderNotes();
         }
         
@@ -848,7 +897,6 @@ function displayServerNotes(container, notes, statusBar, isExample = false) {
                         </div>
                         <div style="display: flex; gap: 0.25rem; z-index: 10;">
                             <button class="server-note-view-btn" onclick="event.stopPropagation(); viewNoteDetail('${note.id}')" style="background: #17a2b8; color: white; border: none; border-radius: 4px; font-size: 0.8rem; padding: 0.25rem 0.5rem; cursor: pointer; display: inline-block !important; visibility: visible !important;">👁️ 查看</button>
-                            <button class="server-note-delete-btn" onclick="event.stopPropagation(); ${isExample ? 'alert(\'示例数据无法删除\')' : `deleteServerNote('${note.id}')`}" style="background: #dc3545; color: white; border: none; border-radius: 4px; font-size: 0.8rem; padding: 0.25rem 0.5rem; cursor: pointer;">🗑️ 删除</button>
                         </div>
                     </div>
                 `;
@@ -998,6 +1046,13 @@ function showFullNote(note) {
             <textarea placeholder="写下你的留言..." id="comment-${note.id}"></textarea>
             <button class="btn-primary" onclick="addComment('${note.id}', true)">发送留言</button>
             <button class="btn-primary" id="cancel-reply" style="background: #6c757d; margin-left: 0.5rem; display: none;">取消回复</button>
+        </div>
+        
+        <!-- 删除按钮放在右下角 -->
+        <div style="display: flex; justify-content: flex-end; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e0e0e0;">
+            <button class="btn-primary" onclick="window.deleteNote && window.deleteNote('${note.id}')" style="background: #dc3545;">
+                🗑️ 删除笔记
+            </button>
         </div>
     `;
     
@@ -1184,6 +1239,63 @@ function compressImage(file) {
 
 // 全局变量：当前筛选条件
 let currentFilter = 'all';
+
+// 自定义确认对话框实现
+function showConfirm(title, message) {
+    return new Promise((resolve) => {
+        const modal = document.getElementById('confirm-modal');
+        const titleEl = document.getElementById('confirm-title');
+        const messageEl = document.getElementById('confirm-message');
+        const okBtn = document.getElementById('confirm-ok');
+        const cancelBtn = document.getElementById('confirm-cancel');
+        
+        if (!modal || !titleEl || !messageEl || !okBtn || !cancelBtn) {
+            console.warn('[showConfirm] 确认对话框元素未找到，直接返回true');
+            resolve(true);
+            return;
+        }
+        
+        titleEl.textContent = title;
+        messageEl.textContent = message;
+        
+        // 清理之前的事件监听器
+        const newOkBtn = okBtn.cloneNode(true);
+        const newCancelBtn = cancelBtn.cloneNode(true);
+        okBtn.parentNode.replaceChild(newOkBtn, okBtn);
+        cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
+        
+        // 绑定新的事件监听器
+        newOkBtn.addEventListener('click', () => {
+            modal.classList.remove('show');
+            resolve(true);
+        });
+        
+        newCancelBtn.addEventListener('click', () => {
+            modal.classList.remove('show');
+            resolve(false);
+        });
+        
+        // 点击关闭按钮或模态框外部关闭
+        const closeBtn = modal.querySelector('.close');
+        if (closeBtn) {
+            const newCloseBtn = closeBtn.cloneNode(true);
+            closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
+            newCloseBtn.addEventListener('click', () => {
+                modal.classList.remove('show');
+                resolve(false);
+            });
+        }
+        
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.classList.remove('show');
+                resolve(false);
+            }
+        });
+        
+        modal.classList.add('show');
+    });
+}
 
 // DOM加载完成后执行
 document.addEventListener('DOMContentLoaded', function() {
@@ -1869,8 +1981,11 @@ function renderNotes() {
         }
     }
     
-    // 根据当前筛选条件过滤笔记
-    const filteredNotes = notesData.filter(isNoteInFilter);
+    // 根据当前筛选条件过滤笔记，并排除已删除的笔记
+    const deletedNoteIds = new Set(deletedNotesData.map(item => item.id));
+    const filteredNotes = notesData.filter(note => isNoteInFilter(note) && !deletedNoteIds.has(note.id));
+    console.log('[renderNotes] 已删除笔记ID集合:', deletedNoteIds);
+    console.log('[renderNotes] 过滤后笔记数量:', filteredNotes.length);
     
     const notesContainer = document.getElementById('notes-container');
     
@@ -2016,7 +2131,7 @@ function openFullNote(noteId) {
         
         <!-- 删除按钮放在右下角 -->
         <div style="display: flex; justify-content: flex-end; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e0e0e0;">
-            <button class="btn-primary" onclick="deleteNote('${note.id}')" style="background: #dc3545;">
+            <button class="btn-primary" onclick="window.deleteNote && window.deleteNote('${note.id}')" style="background: #dc3545;">
                 🗑️ 删除笔记
             </button>
         </div>
@@ -2175,57 +2290,145 @@ function deleteReply(noteId, commentId, replyId) {
     }
 }
 
-// 删除笔记
-function deleteNote(noteId) {
+// 删除笔记（统一删除：本地+服务器）
+window.deleteNote = async function deleteNote(noteId) {
     console.log('[deleteNote] 开始删除流程，noteId:', noteId);
     
-    // 显示确认对话框
-    const isConfirmed = window.confirm('确定要删除这篇笔记吗？删除后无法恢复！');
+    // 使用自定义确认对话框
+    const isConfirmed = await showConfirm('确认删除', '确定要删除这篇笔记吗？删除后将同步到所有设备，无法恢复！');
     console.log('[deleteNote] 用户确认结果:', isConfirmed);
     
-    // 只有在用户确认后才执行删除操作
+    // 执行删除操作
     if (isConfirmed === true) {
-        console.log('[deleteNote] 用户确认删除，开始执行删除操作');
+        console.log('[deleteNote] 用户确认删除，开始执行统一删除操作');
         
-        // 找到要删除的笔记
-        const noteToDelete = notesData.find(note => note.id === noteId);
-        
-        if (noteToDelete) {
-            console.log('[deleteNote] 找到要删除的笔记:', noteToDelete.id);
-            
-            // 从数据缓存中删除笔记
-            const initialLength = notesData.length;
-            notesData = notesData.filter(note => note.id !== noteId);
-            console.log('[deleteNote] 从数据缓存删除后，笔记数量从', initialLength, '变为', notesData.length);
-            
-            // 保存到localStorage
-            localStorage.setItem('notes', JSON.stringify(notesData));
-            console.log('[deleteNote] 已保存到localStorage');
-            
-            // 添加到待同步队列
-            if (syncManager) {
-                syncManager.addToSyncQueue('delete', 'note', noteToDelete);
-                console.log('[deleteNote] 已添加到同步队列');
-            }
-            
-            // 关闭模态框
-            const modal = document.getElementById('full-note-modal');
-            if (modal) {
-                modal.classList.remove('active');
-                console.log('[deleteNote] 已关闭模态框');
-            }
-            
-            // 重新渲染笔记列表
-            renderNotes();
-            console.log('[deleteNote] 已重新渲染笔记列表');
-            
-            alert('笔记已成功删除！');
-        } else {
-            console.error('[deleteNote] 未找到要删除的笔记:', noteId);
-            alert('删除失败：未找到该笔记！');
+        // 显示删除状态
+        const statusBar = document.getElementById('sync-status-bar');
+        if (statusBar) {
+            statusBar.style.display = 'block';
+            statusBar.style.background = '#dc3545';
+            statusBar.innerHTML = '<span id="sync-status-text">正在删除笔记...</span><span id="sync-status-icon">🗑️</span>';
         }
+        
+        // 1. 从本地数据缓存中删除笔记（如果存在）
+        const initialLength = notesData.length;
+        notesData = notesData.filter(note => note.id !== noteId);
+        console.log('[deleteNote] 从本地删除后，笔记数量从', initialLength, '变为', notesData.length);
+        
+        // 2. 添加到本地已删除笔记列表
+        const deletedItem = {
+            id: noteId,
+            deletedAt: new Date().toISOString()
+        };
+        
+        // 检查是否已存在，避免重复添加
+        const existingIndex = deletedNotesData.findIndex(item => item.id === noteId);
+        if (existingIndex === -1) {
+            deletedNotesData.push(deletedItem);
+        } else {
+            deletedNotesData[existingIndex] = deletedItem;
+        }
+        
+        // 保存到localStorage
+        localStorage.setItem('notes', JSON.stringify(notesData));
+        localStorage.setItem('deletedNotes', JSON.stringify(deletedNotesData));
+        console.log('[deleteNote] 已保存到本地localStorage');
+        
+        // 立即关闭模态框和重新渲染笔记列表
+        // 关闭模态框
+        const modal = document.getElementById('full-note-modal');
+        if (modal) {
+            modal.classList.remove('active');
+            console.log('[deleteNote] 已关闭模态框');
+        }
+        
+        // 重新渲染笔记列表
+        renderNotes();
+        console.log('[deleteNote] 已重新渲染笔记列表');
+        
+        // 3. 异步尝试删除服务器上的笔记（不阻塞UI更新）
+        (async () => {
+            if (syncManager && navigator.onLine) {
+                try {
+                    const response = await fetch(`${syncManager.getServerUrl()}/notes/${noteId}`, {
+                        method: 'DELETE'
+                    });
+                    
+                    if (response.ok) {
+                        console.log('[deleteNote] 服务器笔记删除成功');
+                        
+                        // 4. 同步 deletedNotes 到服务器
+                        await syncDeletedNotes();
+                        console.log('[deleteNote] 已同步删除记录到服务器');
+                    } else {
+                        console.warn('[deleteNote] 服务器笔记删除失败，将在下次同步时重试');
+                    }
+                } catch (error) {
+                    console.warn('[deleteNote] 连接服务器失败，将在下次同步时重试:', error);
+                }
+            } else {
+                console.log('[deleteNote] 离线模式，删除记录将在下次同步时上传');
+            }
+            
+            // 显示成功状态
+            if (statusBar) {
+                statusBar.innerHTML = '<span id="sync-status-text">笔记已成功删除！</span><span id="sync-status-icon">✅</span>';
+                setTimeout(() => statusBar.style.display = 'none', 2000);
+            }
+        })();
     } else {
         console.log('[deleteNote] 用户取消了删除操作');
+    }
+}
+
+// 同步已删除笔记列表到服务器
+async function syncDeletedNotes() {
+    if (!syncManager || !navigator.onLine) {
+        console.log('[syncDeletedNotes] 离线模式，跳过同步');
+        return;
+    }
+    
+    console.log('[syncDeletedNotes] 开始同步删除记录');
+    
+    try {
+        // 先获取服务器的删除记录
+        const getResponse = await fetch(`${syncManager.getServerUrl()}/deleted-notes.json`);
+        if (!getResponse.ok) {
+            throw new Error('获取服务器删除记录失败');
+        }
+        
+        const serverDeletedNotes = await getResponse.json();
+        
+        // 合并本地和服务器的删除记录
+        const mergedDeletedNotes = [...deletedNotesData];
+        const localIds = new Set(deletedNotesData.map(item => item.id));
+        
+        serverDeletedNotes.forEach(item => {
+            if (!localIds.has(item.id)) {
+                mergedDeletedNotes.push(item);
+            }
+        });
+        
+        // 上传合并后的删除记录到服务器
+        const putResponse = await fetch(`${syncManager.getServerUrl()}/deleted-notes.json`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(mergedDeletedNotes)
+        });
+        
+        if (!putResponse.ok) {
+            throw new Error('上传删除记录失败');
+        }
+        
+        // 更新本地删除记录
+        deletedNotesData = mergedDeletedNotes;
+        localStorage.setItem('deletedNotes', JSON.stringify(deletedNotesData));
+        
+        console.log('[syncDeletedNotes] 同步完成，共', deletedNotesData.length, '条删除记录');
+    } catch (error) {
+        console.error('[syncDeletedNotes] 同步失败:', error);
     }
 }
 

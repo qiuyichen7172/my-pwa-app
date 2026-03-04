@@ -44,10 +44,23 @@ function initDataFile() {
             notes: [],
             albums: [],
             devices: [],
+            deletedNotes: [],
             lastUpdate: new Date().toISOString()
         };
         fs.writeFileSync(DATA_FILE, JSON.stringify(initialData, null, 2));
         console.log('[initDataFile] 初始化数据文件成功:', DATA_FILE);
+    } else {
+        // 如果文件存在但没有 deletedNotes 字段，添加它
+        try {
+            const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+            if (!data.deletedNotes) {
+                data.deletedNotes = [];
+                fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+                console.log('[initDataFile] 添加 deletedNotes 字段');
+            }
+        } catch (error) {
+            console.error('[initDataFile] 检查数据文件失败:', error);
+        }
     }
 }
 
@@ -354,25 +367,130 @@ app.delete('/notes/:noteId', (req, res) => {
         data.notes = data.notes?.filter(note => note.id !== noteId) || [];
         const newCount = data.notes.length;
         
+        // 添加到已删除笔记列表（包含删除时间戳，用于自动清理）
+        if (!data.deletedNotes) {
+            data.deletedNotes = [];
+        }
+        
+        // 检查是否已存在，避免重复添加
+        const existingIndex = data.deletedNotes.findIndex(item => item.id === noteId);
+        if (existingIndex === -1) {
+            data.deletedNotes.push({
+                id: noteId,
+                deletedAt: new Date().toISOString()
+            });
+        }
+        
         // 更新最后更新时间
         data.lastUpdate = new Date().toISOString();
         
         // 保存数据
         fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
         
-        console.log(`[DELETE /notes/:noteId] 删除成功，删除了 ${originalCount - newCount} 条笔记`);
+        console.log(`[DELETE /notes/:noteId] 删除成功，删除了 ${originalCount - newCount} 条笔记，已添加到删除记录`);
         res.json({ 
             success: true, 
             message: `成功删除笔记: ${noteId}`,
             lastUpdate: data.lastUpdate,
             totalNotes: newCount,
-            deletedCount: originalCount - newCount
+            deletedCount: originalCount - newCount,
+            deletedNotesCount: data.deletedNotes.length
         });
     } catch (error) {
         console.error('[DELETE /notes/:noteId] 删除数据失败:', error);
         res.status(500).json({ 
             error: '删除数据失败',
             message: '无法删除笔记数据' 
+        });
+    }
+});
+
+
+
+// API端点 - 获取已删除笔记列表
+app.get('/deleted-notes.json', (req, res) => {
+    console.log('[GET /deleted-notes.json] 收到获取已删除笔记列表请求');
+    
+    initDataFile();
+    
+    try {
+        const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+        res.json(data.deletedNotes || []);
+        console.log(`[GET /deleted-notes.json] 返回 ${data.deletedNotes?.length || 0} 条删除记录`);
+    } catch (error) {
+        console.error('[GET /deleted-notes.json] 读取数据失败:', error);
+        res.status(500).json({ 
+            error: '读取数据失败',
+            message: '无法读取删除记录' 
+        });
+    }
+});
+
+// API端点 - 同步已删除笔记列表
+app.put('/deleted-notes.json', (req, res) => {
+    console.log('[PUT /deleted-notes.json] 收到同步已删除笔记列表请求');
+    
+    const deletedNotes = req.body || [];
+    
+    if (!Array.isArray(deletedNotes)) {
+        console.error('[PUT /deleted-notes.json] 无效的删除记录格式');
+        return res.status(400).json({ 
+            error: '无效的数据格式',
+            message: '删除记录必须是数组格式' 
+        });
+    }
+    
+    initDataFile();
+    
+    try {
+        // 读取现有数据
+        const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+        
+        // 合并删除记录（去重）
+        if (!data.deletedNotes) {
+            data.deletedNotes = [];
+        }
+        
+        const existingIds = new Set(data.deletedNotes.map(item => item.id));
+        deletedNotes.forEach(item => {
+            if (!existingIds.has(item.id)) {
+                data.deletedNotes.push(item);
+                existingIds.add(item.id);
+            }
+        });
+        
+        // 自动清理：删除超过30天的删除记录
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        const beforeClean = data.deletedNotes.length;
+        data.deletedNotes = data.deletedNotes.filter(item => {
+            return new Date(item.deletedAt) > thirtyDaysAgo;
+        });
+        const afterClean = data.deletedNotes.length;
+        
+        if (beforeClean !== afterClean) {
+            console.log(`[PUT /deleted-notes.json] 自动清理了 ${beforeClean - afterClean} 条过期删除记录`);
+        }
+        
+        // 更新最后更新时间
+        data.lastUpdate = new Date().toISOString();
+        
+        // 保存数据
+        fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+        
+        console.log(`[PUT /deleted-notes.json] 同步成功，共 ${data.deletedNotes.length} 条删除记录`);
+        res.json({ 
+            success: true, 
+            message: `同步了${deletedNotes.length}条删除记录`,
+            lastUpdate: data.lastUpdate,
+            totalDeletedNotes: data.deletedNotes.length,
+            cleanedCount: beforeClean - afterClean
+        });
+    } catch (error) {
+        console.error('[PUT /deleted-notes.json] 同步失败:', error);
+        res.status(500).json({ 
+            error: '同步失败',
+            message: '无法同步删除记录' 
         });
     }
 });

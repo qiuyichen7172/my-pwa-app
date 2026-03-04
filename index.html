@@ -243,7 +243,17 @@
         </div>
     </div>
 
-    
+    <!-- 自定义确认对话框 -->
+    <div id="confirm-modal" class="modal">
+        <div class="modal-content" style="max-width: 400px;">
+            <h3 id="confirm-title">确认操作</h3>
+            <p id="confirm-message" style="margin: 1rem 0; color: #555;"></p>
+            <div style="display: flex; gap: 1rem; justify-content: flex-end; margin-top: 1.5rem;">
+                <button id="confirm-cancel" class="btn-primary" style="background: #6c757d;">取消</button>
+                <button id="confirm-ok" class="btn-primary" style="background: #dc3545;">确认</button>
+            </div>
+        </div>
+    </div>
 
     <!-- Service Worker注册 -->
     <script>
