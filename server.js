@@ -15,7 +15,22 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' })); // 增加请求体大小限制
 
 // 静态文件服务 - 提供HTML、CSS、JS等静态资源
-app.use(express.static(path.join(__dirname)));
+app.use(express.static(path.join(__dirname), {
+    // 为静态资源添加缓存控制头
+    setHeaders: (res, path) => {
+        // HTML文件 - 不缓存或短时间缓存
+        if (path.endsWith('.html')) {
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+            res.setHeader('Pragma', 'no-cache');
+            res.setHeader('Expires', '0');
+        } 
+        // CSS、JS、图片等静态资源 - 较长时间缓存，但允许重新验证
+        else if (path.match(/\.(css|js|jpg|jpeg|png|gif|ico|json|webmanifest)$/)) {
+            res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=31536000');
+            res.setHeader('Expires', new Date(Date.now() + 86400000).toUTCString()); // 1天
+        }
+    }
+}));
 
 // 初始化数据文件
 function initDataFile() {

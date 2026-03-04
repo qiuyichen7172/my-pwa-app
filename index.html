@@ -39,15 +39,16 @@
             <span id="current-user" class="current-user"></span>
             <div style="display: flex; gap: 1rem;">
                 <button id="settings-btn" class="btn-primary" style="background: #6c757d;">⚙️ 登录设置</button>
+                <button id="server-settings-btn" class="btn-primary" style="background: #6c757d;">🖥️ 服务器设置</button>
                 <button id="logout-btn" class="logout-btn">退出登录</button>
             </div>
         </div>
-        <div style="width: 100%; text-align: center; font-weight: 600; color: #ff6b6b;">
+        <div class="together-days-container">
             <span id="together-days" class="together-days"></span>
         </div>
     </div>
 
-    <!-- 设置模态框 -->
+    <!-- 登录设置模态框 -->
     <div id="settings-modal" class="modal">
         <div class="modal-content">
             <span class="close">&times;</span>
@@ -63,45 +64,53 @@
                 </div>
                 <button type="submit" class="btn-primary">保存设置</button>
             </form>
+        </div>
+    </div>
+
+    <!-- 服务器设置模态框 -->
+    <div id="server-settings-modal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h3>🖥️ 服务器设置</h3>
             
             <!-- 服务器配置 -->
-            <div style="margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid #e0e0e0;">
-                <h3>🖥️ 服务器配置</h3>
-                <p style="color: #666; margin-bottom: 1rem;">配置本地服务器地址，实现自动同步</p>
+            <div style="margin-bottom: 2rem;">
+                <h4 style="margin-bottom: 1rem; color: #555;">服务器配置</h4>
+                <p style="color: #666; margin-bottom: 1rem;">配置本地服务器地址，实现数据同步</p>
                 
                 <div class="form-group">
                     <label for="server-url">服务器地址：</label>
                     <input type="text" id="server-url" name="server-url" placeholder="例如：https://xxx.ngrok-free.app" value="https://pwa.diandiandidi.vip">
                     <button class="btn-primary" onclick="saveServerUrl()" style="margin-top: 0.5rem;">保存服务器地址</button>
                 </div>
+            </div>
+            
+            <div style="margin-bottom: 2rem; padding: 1rem; background: #f8f9fa; border-radius: 8px; font-size: 0.9rem;">
+                <h4 style="margin-bottom: 0.5rem; color: #555;">📋 设备信息</h4>
+                <p style="color: #666;">设备ID：<code id="device-id-display" style="background: #e9ecef; padding: 0.25rem 0.5rem; border-radius: 4px; margin-left: 0.5rem;"></code></p>
+                <p style="color: #666;">最后同步：<span id="last-sync-display" style="margin-left: 0.5rem;">从未同步</span></p>
+                <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                    <button class="btn-primary" onclick="uploadToServer()" style="background: #28a745;">⬆️ 上传到服务器</button>
+                    <button class="btn-primary" onclick="downloadFromServer()" style="background: #17a2b8;">⬇️ 从服务器下载</button>
+                    <button class="btn-primary" onclick="syncBothWays()" style="background: #6c757d;">🔄 双向同步</button>
+                </div>
+                <div style="margin-top: 0.5rem; padding: 0.5rem; background: #e9ecef; border-radius: 4px; font-size: 0.8rem; color: #666;">
+                    <p id="sync-stats" style="margin: 0;">本地笔记: <span id="local-count">0</span> | 服务器笔记: <span id="server-count">0</span></p>
+                </div>
+            </div>
+            
+            <!-- 服务器数据管理 -->
+            <div style="padding: 1rem; background: #f8f9fa; border-radius: 8px; font-size: 0.9rem;">
+                <h4 style="margin-bottom: 0.5rem; color: #555;">🗄️ 服务器数据管理</h4>
+                <p style="color: #666; margin-bottom: 1rem;">查看和管理服务器上的所有笔记</p>
                 
-                <div style="margin-top: 1rem; padding: 1rem; background: #f8f9fa; border-radius: 8px; font-size: 0.9rem;">
-                    <h4 style="margin-bottom: 0.5rem; color: #555;">📋 设备信息</h4>
-                    <p style="color: #666;">设备ID：<code id="device-id-display" style="background: #e9ecef; padding: 0.25rem 0.5rem; border-radius: 4px; margin-left: 0.5rem;"></code></p>
-                    <p style="color: #666;">最后同步：<span id="last-sync-display" style="margin-left: 0.5rem;">从未同步</span></p>
-                    <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
-                        <button class="btn-primary" onclick="uploadToServer()" style="background: #28a745;">⬆️ 上传到服务器</button>
-                        <button class="btn-primary" onclick="downloadFromServer()" style="background: #17a2b8;">⬇️ 从服务器下载</button>
-                        <button class="btn-primary" onclick="syncBothWays()" style="background: #6c757d;">🔄 双向同步</button>
-                    </div>
-                    <div style="margin-top: 0.5rem; padding: 0.5rem; background: #e9ecef; border-radius: 4px; font-size: 0.8rem; color: #666;">
-                        <p id="sync-stats" style="margin: 0;">本地笔记: <span id="local-count">0</span> | 服务器笔记: <span id="server-count">0</span></p>
-                    </div>
+                <div style="margin-bottom: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                    <button class="btn-primary" onclick="viewServerNotes()" style="background: #17a2b8;">📋 查看服务器笔记</button>
                 </div>
                 
-                <!-- 服务器数据管理 -->
-                <div style="margin-top: 2rem; padding: 1rem; background: #f8f9fa; border-radius: 8px; font-size: 0.9rem;">
-                    <h4 style="margin-bottom: 0.5rem; color: #555;">🗄️ 服务器数据管理</h4>
-                    <p style="color: #666; margin-bottom: 1rem;">查看和管理服务器上的所有笔记</p>
-                    
-                    <div style="margin-bottom: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
-                        <button class="btn-primary" onclick="viewServerNotes()" style="background: #17a2b8;">📋 查看服务器笔记</button>
-                    </div>
-                    
-                    <!-- 服务器笔记列表 -->
-                    <div id="server-notes-container" style="max-height: 300px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 4px; padding: 0.5rem;">
-                        <p style="color: #999; text-align: center;">点击"查看服务器笔记"获取服务器上的笔记列表</p>
-                    </div>
+                <!-- 服务器笔记列表 -->
+                <div id="server-notes-container" style="max-height: 300px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 4px; padding: 0.5rem;">
+                    <p style="color: #999; text-align: center;">点击"查看服务器笔记"获取服务器上的笔记列表</p>
                 </div>
             </div>
         </div>
@@ -121,7 +130,15 @@
         <!-- 日常笔记区域 -->
         <section id="notes" class="section active">
             <div class="section-header">
-                <h2>📝 日常笔记</h2>
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <h2>📝 日常笔记</h2>
+                    <select id="note-filter" class="note-filter">
+                        <option value="all" selected>展示全部</option>
+                        <option value="6months">展示半年</option>
+                        <option value="3months">展示3个月</option>
+                        <option value="1month">展示1个月</option>
+                    </select>
+                </div>
                 <button id="add-note-btn" class="btn-primary">+ 添加笔记</button>
             </div>
             

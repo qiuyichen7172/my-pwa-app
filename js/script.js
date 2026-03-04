@@ -296,23 +296,52 @@ class SyncManager {
         syncStatus.isSyncing = true;
         
         try {
-            // 上传所有笔记（设置超时）
+            // 智能同步：先获取服务器笔记，然后只上传服务器缺少的本地笔记
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), SYNC_CONFIG.pingTimeout);
             
-            const response = await fetch(`${this.serverUrl}/notes.json`, {
-                method: 'PUT',
+            // 获取服务器笔记
+            const serverResponse = await fetch(`${this.serverUrl}/notes.json`, {
+                method: 'GET',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify(notesData),
                 signal: controller.signal
             });
             
             clearTimeout(timeoutId);
             
-            if (!response.ok) {
-                throw new Error(`同步失败: ${response.statusText}`);
+            if (!serverResponse.ok) {
+                throw new Error(`获取服务器笔记失败: ${serverResponse.statusText}`);
+            }
+            
+            const serverNotes = await serverResponse.json();
+            const localNoteIds = new Set(notesData.map(note => note.id));
+            const serverNoteIds = new Set(serverNotes.map(note => note.id));
+            
+            // 服务器缺少的本地笔记（需要上传）
+            const notesToUpload = notesData.filter(note => !serverNoteIds.has(note.id));
+            
+            // 创建合并后的笔记列表（保留服务器已有笔记，添加本地新笔记）
+            const mergedNotes = [...serverNotes, ...notesToUpload];
+            
+            // 上传合并后的笔记列表
+            const uploadController = new AbortController();
+            const uploadTimeoutId = setTimeout(() => uploadController.abort(), SYNC_CONFIG.pingTimeout);
+            
+            const uploadResponse = await fetch(`${this.serverUrl}/notes.json`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(mergedNotes),
+                signal: uploadController.signal
+            });
+            
+            clearTimeout(uploadTimeoutId);
+            
+            if (!uploadResponse.ok) {
+                throw new Error(`同步失败: ${uploadResponse.statusText}`);
             }
             
             // 清空同步队列
@@ -657,7 +686,7 @@ async function downloadFromServer() {
     }
 }
 
-// 双向同步
+// 双向同步（智能合并）
 async function syncBothWays() {
     if (!syncManager) return;
     
@@ -671,11 +700,65 @@ async function syncBothWays() {
             statusBar.innerHTML = '<span id="sync-status-text">正在双向同步...</span><span id="sync-status-icon">🔄</span>';
         }
         
-        // 先上传本地数据到服务器
-        await syncManager.syncToServer();
+        // 获取服务器笔记
+        const response = await fetch(`${syncManager.getServerUrl()}/notes.json`);
+        if (!response.ok) {
+            throw new Error(`获取服务器笔记失败: ${response.statusText}`);
+        }
+        const serverNotes = await response.json();
         
-        // 再从服务器下载最新数据
-        const success = await syncManager.pullFromServer();
+        // 获取本地笔记
+        const localNotes = notesData;
+        
+        // 智能合并：找出本地缺少的服务器笔记和服务器缺少的本地笔记
+        const localNoteIds = new Set(localNotes.map(note => note.id));
+        const serverNoteIds = new Set(serverNotes.map(note => note.id));
+        
+        // 本地缺少的服务器笔记（需要下载）
+        const notesToDownload = serverNotes.filter(note => !localNoteIds.has(note.id));
+        
+        // 服务器缺少的本地笔记（需要上传）
+        const notesToUpload = localNotes.filter(note => !serverNoteIds.has(note.id));
+        
+        console.log('[syncBothWays] 同步分析:', {
+            localCount: localNotes.length,
+            serverCount: serverNotes.length,
+            toDownload: notesToDownload.length,
+            toUpload: notesToUpload.length
+        });
+        
+        let success = true;
+        
+        // 先上传本地缺少的笔记到服务器
+        if (notesToUpload.length > 0) {
+            // 创建合并后的笔记列表（保留服务器已有笔记，添加本地新笔记）
+            const mergedNotesForServer = [...serverNotes, ...notesToUpload];
+            const uploadResponse = await fetch(`${syncManager.getServerUrl()}/notes.json`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(mergedNotesForServer)
+            });
+            
+            if (!uploadResponse.ok) {
+                throw new Error(`上传笔记失败: ${uploadResponse.statusText}`);
+                success = false;
+            }
+        }
+        
+        // 再下载服务器缺少的笔记到本地
+        if (notesToDownload.length > 0) {
+            // 合并本地笔记和服务器新笔记
+            const mergedNotesForLocal = [...localNotes, ...notesToDownload];
+            
+            // 更新本地数据
+            notesData = mergedNotesForLocal;
+            localStorage.setItem('notes', JSON.stringify(notesData));
+            
+            // 更新UI
+            renderNotes();
+        }
         
         if (success) {
             if (statusBar) {
@@ -756,14 +839,14 @@ function displayServerNotes(container, notes, statusBar, isExample = false) {
                 const excerpt = textContent.trim().substring(0, 50) + (textContent.length > 50 ? '...' : '');
                 
                 return `
-                    <div style="margin-bottom: 0.5rem; padding: 0.5rem; background: white; border: 1px solid #e0e0e0; border-radius: 4px; display: flex; justify-content: space-between; align-items: flex-start;">
+                    <div style="margin-bottom: 0.5rem; padding: 0.5rem; background: white; border: 1px solid #e0e0e0; border-radius: 4px; display: flex; justify-content: space-between; align-items: flex-start; cursor: pointer;" onclick="viewNoteDetail('${note.id}')" title="点击查看笔记详情">
                         <div style="flex: 1;">
                             <div style="font-weight: bold; margin-bottom: 0.25rem;">${note.title || '无标题'}</div>
                             <div style="font-size: 0.8rem; color: #666; margin-bottom: 0.25rem;">${note.author} · ${formatDate(note.createdAt)}</div>
                             <div style="font-size: 0.8rem; color: #999;">${excerpt}</div>
                             ${isExample ? '<div style="font-size: 0.8rem; color: #17a2b8; margin-top: 0.25rem;">（示例数据）</div>' : ''}
                         </div>
-                        <button class="btn-primary" onclick="${isExample ? 'alert(\'示例数据无法删除\')' : `deleteServerNote('${note.id}')`}" style="background: #dc3545; font-size: 0.8rem; padding: 0.25rem 0.5rem;">🗑️ 删除</button>
+                        <button class="btn-primary" onclick="event.stopPropagation(); ${isExample ? 'alert(\'示例数据无法删除\')' : `deleteServerNote('${note.id}')`}" style="background: #dc3545; font-size: 0.8rem; padding: 0.25rem 0.5rem;">🗑️ 删除</button>
                     </div>
                 `;
             }).join('');
@@ -780,6 +863,121 @@ function displayServerNotes(container, notes, statusBar, isExample = false) {
         }
         setTimeout(() => statusBar.style.display = 'none', 2000);
     }
+}
+
+// 查看笔记详情
+function viewNoteDetail(noteId) {
+    console.log('[viewNoteDetail] 查看笔记详情:', noteId);
+    
+    // 查找本地笔记
+    let note = notesData.find(n => n.id === noteId);
+    
+    if (note) {
+        // 本地有该笔记，直接显示
+        showFullNote(note);
+    } else {
+        // 本地没有该笔记，尝试从服务器获取
+        fetchServerNote(noteId);
+    }
+}
+
+// 从服务器获取笔记
+async function fetchServerNote(noteId) {
+    if (!syncManager) return;
+    
+    console.log('[fetchServerNote] 从服务器获取笔记:', noteId);
+    
+    const statusBar = document.getElementById('sync-status-bar');
+    if (statusBar) {
+        statusBar.style.display = 'block';
+        statusBar.style.background = '#17a2b8';
+        statusBar.innerHTML = '<span id="sync-status-text">正在获取笔记详情...</span><span id="sync-status-icon">📋</span>';
+    }
+    
+    try {
+        const response = await fetch(`${syncManager.getServerUrl()}/notes/${noteId}`);
+        if (!response.ok) {
+            throw new Error(`获取笔记失败: ${response.statusText}`);
+        }
+        
+        const note = await response.json();
+        console.log('[fetchServerNote] 获取笔记成功:', note);
+        
+        // 显示笔记详情
+        showFullNote(note);
+        
+        if (statusBar) {
+            statusBar.style.display = 'none';
+        }
+    } catch (error) {
+        console.error('[fetchServerNote] 获取笔记失败:', error);
+        
+        if (statusBar) {
+            statusBar.style.background = '#dc3545';
+            statusBar.innerHTML = '<span id="sync-status-text">获取笔记失败！</span><span id="sync-status-icon">❌</span>';
+            setTimeout(() => statusBar.style.display = 'none', 3000);
+        }
+    }
+}
+
+// 显示完整笔记
+function showFullNote(note) {
+    console.log('[showFullNote] 显示完整笔记:', note.id);
+    
+    // 查找或创建完整笔记模态框
+    let fullNoteModal = document.getElementById('full-note-modal');
+    if (!fullNoteModal) {
+        // 如果模态框不存在，创建一个
+        fullNoteModal = document.createElement('div');
+        fullNoteModal.id = 'full-note-modal';
+        fullNoteModal.className = 'full-note-modal';
+        fullNoteModal.innerHTML = `
+            <div class="full-note-content">
+                <button class="close-full-note">&times;</button>
+                <div class="full-note-header">
+                    <h2 class="full-note-title"></h2>
+                    <p class="full-note-meta"></p>
+                </div>
+                <div class="full-note-body"></div>
+            </div>
+        `;
+        document.body.appendChild(fullNoteModal);
+        
+        // 添加关闭事件
+        const closeBtn = fullNoteModal.querySelector('.close-full-note');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => {
+                fullNoteModal.style.display = 'none';
+            });
+        }
+        
+        // 点击模态框外部关闭
+        fullNoteModal.addEventListener('click', (e) => {
+            if (e.target === fullNoteModal) {
+                fullNoteModal.style.display = 'none';
+            }
+        });
+    }
+    
+    // 更新笔记内容
+    const titleEl = fullNoteModal.querySelector('.full-note-title');
+    const metaEl = fullNoteModal.querySelector('.full-note-meta');
+    const bodyEl = fullNoteModal.querySelector('.full-note-body');
+    
+    if (titleEl) {
+        titleEl.textContent = note.title || '无标题';
+    }
+    
+    if (metaEl) {
+        metaEl.textContent = `${note.author || '未知作者'} · ${formatDate(note.createdAt)}`;
+    }
+    
+    if (bodyEl) {
+        bodyEl.innerHTML = note.content || '';
+    }
+    
+    // 显示模态框
+    fullNoteModal.style.display = 'flex';
 }
 
 // 删除服务器上的笔记
@@ -948,6 +1146,9 @@ function compressImage(file) {
     });
 }
 
+// 全局变量：当前筛选条件
+let currentFilter = 'all';
+
 // DOM加载完成后执行
 document.addEventListener('DOMContentLoaded', function() {
     // 初始化数据
@@ -984,7 +1185,43 @@ document.addEventListener('DOMContentLoaded', function() {
             await syncBothWays();
         }
     }, 3000); // 延迟3秒执行，避免阻塞页面加载
+    
+    // 添加筛选按钮事件监听器
+    addFilterEventListeners();
 });
+
+// 添加筛选下拉框事件监听器
+function addFilterEventListeners() {
+    const filterSelect = document.getElementById('note-filter');
+    if (filterSelect) {
+        filterSelect.addEventListener('change', function() {
+            // 更新当前筛选条件
+            currentFilter = this.value;
+            // 重新渲染笔记
+            renderNotes();
+        });
+    }
+}
+
+// 检查笔记是否符合筛选条件
+function isNoteInFilter(note) {
+    const now = new Date();
+    const noteDate = new Date(note.createdAt || note.updatedAt);
+    const diffTime = Math.abs(now - noteDate);
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    switch (currentFilter) {
+        case '6months':
+            return diffDays <= 180;
+        case '3months':
+            return diffDays <= 90;
+        case '1month':
+            return diffDays <= 30;
+        case 'all':
+        default:
+            return true;
+    }
+}
 
 // 处理滚动事件，控制用户信息栏显示/隐藏
 function handleScroll() {
@@ -1085,6 +1322,13 @@ function bindEventListeners() {
     const settingsModal = document.getElementById('settings-modal');
     settingsBtn.addEventListener('click', function() {
         settingsModal.classList.add('show');
+    });
+    
+    // 服务器设置按钮
+    const serverSettingsBtn = document.getElementById('server-settings-btn');
+    const serverSettingsModal = document.getElementById('server-settings-modal');
+    serverSettingsBtn.addEventListener('click', function() {
+        serverSettingsModal.classList.add('show');
     });
 
     // 设置表单提交
@@ -1480,6 +1724,9 @@ function renderNotes() {
         localStorage.setItem('notes', JSON.stringify(notesData));
     }
     
+    // 根据当前筛选条件过滤笔记
+    const filteredNotes = notesData.filter(isNoteInFilter);
+    
     const notesContainer = document.getElementById('notes-container');
     
     if (!notesContainer) {
@@ -1487,16 +1734,16 @@ function renderNotes() {
         return;
     }
     
-    console.log('[renderNotes] 渲染', notesData.length, '条笔记');
+    console.log('[renderNotes] 渲染', filteredNotes.length, '条笔记（总笔记数：', notesData.length, '，筛选条件：', currentFilter, '）');
     
-    if (notesData.length === 0) {
-        console.log('[renderNotes] 没有笔记可渲染，显示空状态');
-        notesContainer.innerHTML = '<p style="text-align: center; color: #999; grid-column: 1 / -1; padding: 2rem; font-size: 1.2rem;">还没有笔记，快来添加第一条吧！</p>';
+    if (filteredNotes.length === 0) {
+        console.log('[renderNotes] 没有符合条件的笔记可渲染');
+        notesContainer.innerHTML = `<p style="text-align: center; color: #999; grid-column: 1 / -1; padding: 2rem; font-size: 1.2rem;">${notesData.length === 0 ? '还没有笔记，快来添加第一条吧！' : '没有符合筛选条件的笔记'}</p>`;
         return;
     }
     
     try {
-        const notesHtml = notesData.map(note => {
+        const notesHtml = filteredNotes.map(note => {
             // 提取笔记中的第一张图片作为封面
             const tempDiv = document.createElement('div');
             tempDiv.innerHTML = note.content || '';
