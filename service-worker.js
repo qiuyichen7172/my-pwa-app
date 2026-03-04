@@ -1,5 +1,5 @@
 // 缓存名称
-const CACHE_NAME = 'couple-notes-v4';
+const CACHE_NAME = 'couple-notes-v5'; // 每次更新代码时增加版本号
 const urlsToCache = [
   '.',
   'index.html',
@@ -10,33 +10,57 @@ const urlsToCache = [
 
 // 安装Service Worker
 self.addEventListener('install', (event) => {
+  // 强制跳过等待，立即激活
+  self.skipWaiting();
+  
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => {
-        console.log('Cache opened');
+        console.log('Cache opened, updating cache...');
         return cache.addAll(urlsToCache);
       })
   );
-  self.skipWaiting(); // 立即激活新的Service Worker
 });
 
 // 激活Service Worker
 self.addEventListener('activate', (event) => {
-  const cacheWhitelist = [CACHE_NAME];
+  // 立即控制所有客户端
+  self.clients.claim();
+  
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames.map((cacheName) => {
-          if (cacheWhitelist.indexOf(cacheName) === -1) {
+          // 删除所有旧缓存，只保留当前版本
+          if (cacheName !== CACHE_NAME) {
             console.log('Deleting old cache:', cacheName);
             return caches.delete(cacheName);
           }
         })
       );
     }).then(() => {
-      return self.clients.claim(); // 立即控制所有客户端
+      console.log('All old caches deleted');
     })
   );
+});
+
+// 监听message事件，用于清除缓存
+self.addEventListener('message', (event) => {
+  if (event.data === 'clearCache') {
+    console.log('Received clearCache message');
+    caches.keys().then((cacheNames) => {
+      return Promise.all(
+        cacheNames.map((cacheName) => {
+          console.log('Deleting cache:', cacheName);
+          return caches.delete(cacheName);
+        })
+      );
+    }).then(() => {
+      console.log('All caches deleted');
+      // 发送消息回客户端
+      event.source.postMessage('cacheCleared');
+    });
+  }
 });
 
 // 拦截网络请求

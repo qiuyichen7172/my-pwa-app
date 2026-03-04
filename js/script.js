@@ -1188,7 +1188,109 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // 添加筛选按钮事件监听器
     addFilterEventListeners();
+    
+    // 添加清除缓存按钮事件监听器
+    addClearCacheEventListener();
+    
+    // 检查Service Worker是否需要更新
+    checkServiceWorkerUpdate();
 });
+
+// 添加清除缓存按钮事件监听器
+function addClearCacheEventListener() {
+    const clearCacheBtn = document.getElementById('clear-cache-btn');
+    if (clearCacheBtn) {
+        clearCacheBtn.addEventListener('click', clearCache);
+    }
+}
+
+// 清除缓存函数
+async function clearCache() {
+    console.log('[clearCache] 开始清除缓存');
+    
+    // 显示同步状态
+    const statusBar = document.getElementById('sync-status-bar');
+    if (statusBar) {
+        statusBar.style.display = 'block';
+        statusBar.style.background = '#28a745';
+        statusBar.innerHTML = '<span id="sync-status-text">正在清除缓存...</span><span id="sync-status-icon">🔄</span>';
+    }
+    
+    try {
+        // 1. 清除Service Worker缓存
+        if ('serviceWorker' in navigator) {
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            for (const registration of registrations) {
+                // 发送消息给Service Worker，清除缓存
+                if (registration.active) {
+                    registration.active.postMessage('clearCache');
+                }
+                // 注销Service Worker
+                await registration.unregister();
+            }
+        }
+        
+        // 2. 清除浏览器缓存
+        if ('caches' in window) {
+            const cacheNames = await caches.keys();
+            for (const cacheName of cacheNames) {
+                await caches.delete(cacheName);
+            }
+        }
+        
+        // 3. 清除localStorage和sessionStorage
+        localStorage.clear();
+        sessionStorage.clear();
+        
+        // 4. 刷新页面
+        setTimeout(() => {
+            window.location.reload(true); // 强制刷新页面
+        }, 1000);
+        
+    } catch (error) {
+        console.error('[clearCache] 清除缓存失败:', error);
+        if (statusBar) {
+            statusBar.style.background = '#dc3545';
+            statusBar.innerHTML = '<span id="sync-status-text">清除缓存失败！</span><span id="sync-status-icon">❌</span>';
+            setTimeout(() => statusBar.style.display = 'none', 3000);
+        }
+    }
+}
+
+// 检查Service Worker是否需要更新
+async function checkServiceWorkerUpdate() {
+    if ('serviceWorker' in navigator) {
+        try {
+            const registration = await navigator.serviceWorker.register('service-worker.js');
+            
+            // 检查是否有新的Service Worker等待激活
+            if (registration.waiting) {
+                console.log('[checkServiceWorkerUpdate] 发现新的Service Worker，正在激活...');
+                // 发送消息给等待的Service Worker，让它立即激活
+                registration.waiting.postMessage('skipWaiting');
+            }
+            
+            // 监听更新事件
+            registration.addEventListener('updatefound', () => {
+                console.log('[checkServiceWorkerUpdate] 正在下载新的Service Worker...');
+                const newWorker = registration.installing;
+                if (newWorker) {
+                    newWorker.addEventListener('statechange', () => {
+                        if (newWorker.state === 'installed') {
+                            if (navigator.serviceWorker.controller) {
+                                console.log('[checkServiceWorkerUpdate] 新的Service Worker已准备好，正在激活...');
+                                newWorker.postMessage('skipWaiting');
+                            }
+                        }
+                    });
+                }
+            });
+            
+        } catch (error) {
+            console.error('[checkServiceWorkerUpdate] 注册Service Worker失败:', error);
+        }
+    }
+}
 
 // 添加筛选下拉框事件监听器
 function addFilterEventListeners() {

@@ -18,19 +18,24 @@ app.use(express.json({ limit: '10mb' })); // 增加请求体大小限制
 app.use(express.static(path.join(__dirname), {
     // 为静态资源添加缓存控制头
     setHeaders: (res, path) => {
-        // HTML文件 - 不缓存或短时间缓存
-        if (path.endsWith('.html')) {
-            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-            res.setHeader('Pragma', 'no-cache');
-            res.setHeader('Expires', '0');
-        } 
-        // CSS、JS、图片等静态资源 - 较长时间缓存，但允许重新验证
-        else if (path.match(/\.(css|js|jpg|jpeg|png|gif|ico|json|webmanifest)$/)) {
-            res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=31536000');
-            res.setHeader('Expires', new Date(Date.now() + 86400000).toUTCString()); // 1天
-        }
+        // 所有文件都设置严格的缓存控制
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+        
+        // 添加ETag，帮助浏览器验证资源是否更新
+        res.setHeader('ETag', `"${Date.now()}-${Math.random().toString(36).substr(2, 9)}"`);
     }
 }));
+
+// 添加缓存控制中间件
+app.use((req, res, next) => {
+    // 设置全局缓存控制头
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    next();
+});
 
 // 初始化数据文件
 function initDataFile() {
