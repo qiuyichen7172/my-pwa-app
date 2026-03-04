@@ -243,6 +243,11 @@ main {
     animation: fadeIn 0.3s ease;
 }
 
+/* 确认对话框样式 - 层级更高 */
+#confirm-modal {
+    z-index: 5000;
+}
+
 .modal.show {
     display: flex;
     justify-content: center;

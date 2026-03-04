@@ -2294,6 +2294,16 @@ function deleteReply(noteId, commentId, replyId) {
 window.deleteNote = async function deleteNote(noteId) {
     console.log('[deleteNote] 开始删除流程，noteId:', noteId);
     
+    // 先关闭笔记详情页，让确认框正常显示
+    const modal = document.getElementById('full-note-modal');
+    if (modal) {
+        modal.classList.remove('active');
+        console.log('[deleteNote] 已关闭笔记详情页');
+    }
+    
+    // 等待一下，确保模态框关闭
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
     // 使用自定义确认对话框
     const isConfirmed = await showConfirm('确认删除', '确定要删除这篇笔记吗？删除后将同步到所有设备，无法恢复！');
     console.log('[deleteNote] 用户确认结果:', isConfirmed);
@@ -2309,6 +2319,9 @@ window.deleteNote = async function deleteNote(noteId) {
             statusBar.style.background = '#dc3545';
             statusBar.innerHTML = '<span id="sync-status-text">正在删除笔记...</span><span id="sync-status-icon">🗑️</span>';
         }
+        
+        // 保存要删除的笔记数据，以便在服务器删除失败时可以恢复
+        const noteToDelete = notesData.find(note => note.id === noteId);
         
         // 1. 从本地数据缓存中删除笔记（如果存在）
         const initialLength = notesData.length;
@@ -2334,50 +2347,79 @@ window.deleteNote = async function deleteNote(noteId) {
         localStorage.setItem('deletedNotes', JSON.stringify(deletedNotesData));
         console.log('[deleteNote] 已保存到本地localStorage');
         
-        // 立即关闭模态框和重新渲染笔记列表
-        // 关闭模态框
-        const modal = document.getElementById('full-note-modal');
-        if (modal) {
-            modal.classList.remove('active');
-            console.log('[deleteNote] 已关闭模态框');
-        }
-        
         // 重新渲染笔记列表
         renderNotes();
         console.log('[deleteNote] 已重新渲染笔记列表');
         
-        // 3. 异步尝试删除服务器上的笔记（不阻塞UI更新）
-        (async () => {
-            if (syncManager && navigator.onLine) {
-                try {
-                    const response = await fetch(`${syncManager.getServerUrl()}/notes/${noteId}`, {
-                        method: 'DELETE'
-                    });
+        // 3. 尝试删除服务器上的笔记
+        let serverDeleteSuccess = false;
+        if (syncManager && navigator.onLine) {
+            try {
+                const response = await fetch(`${syncManager.getServerUrl()}/notes/${noteId}`, {
+                    method: 'DELETE'
+                });
+                
+                if (response.ok) {
+                    console.log('[deleteNote] 服务器笔记删除成功');
+                    serverDeleteSuccess = true;
                     
-                    if (response.ok) {
-                        console.log('[deleteNote] 服务器笔记删除成功');
-                        
-                        // 4. 同步 deletedNotes 到服务器
-                        await syncDeletedNotes();
-                        console.log('[deleteNote] 已同步删除记录到服务器');
-                    } else {
-                        console.warn('[deleteNote] 服务器笔记删除失败，将在下次同步时重试');
-                    }
-                } catch (error) {
-                    console.warn('[deleteNote] 连接服务器失败，将在下次同步时重试:', error);
+                    // 4. 同步 deletedNotes 到服务器
+                    await syncDeletedNotes();
+                    console.log('[deleteNote] 已同步删除记录到服务器');
+                } else {
+                    console.warn('[deleteNote] 服务器笔记删除失败，HTTP状态:', response.status);
                 }
-            } else {
-                console.log('[deleteNote] 离线模式，删除记录将在下次同步时上传');
+            } catch (error) {
+                console.warn('[deleteNote] 连接服务器失败:', error);
             }
+        } else {
+            console.log('[deleteNote] 离线模式，删除记录将在下次同步时上传');
+            serverDeleteSuccess = true; // 离线模式视为成功
+        }
+        
+        // 如果服务器删除失败，提供恢复选项
+        if (!serverDeleteSuccess && noteToDelete) {
+            console.warn('[deleteNote] 服务器删除失败，询问用户是否恢复');
             
-            // 显示成功状态
-            if (statusBar) {
-                statusBar.innerHTML = '<span id="sync-status-text">笔记已成功删除！</span><span id="sync-status-icon">✅</span>';
-                setTimeout(() => statusBar.style.display = 'none', 2000);
+            const shouldRestore = await showConfirm(
+                '服务器删除失败',
+                '服务器删除失败，但本地已删除。是否要恢复笔记？（恢复后可重试删除）'
+            );
+            
+            if (shouldRestore) {
+                // 恢复笔记
+                notesData.push(noteToDelete);
+                deletedNotesData = deletedNotesData.filter(item => item.id !== noteId);
+                localStorage.setItem('notes', JSON.stringify(notesData));
+                localStorage.setItem('deletedNotes', JSON.stringify(deletedNotesData));
+                renderNotes();
+                
+                console.log('[deleteNote] 已恢复笔记');
+                if (statusBar) {
+                    statusBar.innerHTML = '<span id="sync-status-text">笔记已恢复！</span><span id="sync-status-icon">⚠️</span>';
+                    setTimeout(() => statusBar.style.display = 'none', 3000);
+                }
+                return;
             }
-        })();
+        }
+        
+        // 显示成功状态
+        if (statusBar) {
+            const statusMessage = serverDeleteSuccess 
+                ? '笔记已成功删除！' 
+                : '本地已删除，服务器删除失败';
+            const statusIcon = serverDeleteSuccess ? '✅' : '⚠️';
+            statusBar.innerHTML = `<span id="sync-status-text">${statusMessage}</span><span id="sync-status-icon">${statusIcon}</span>`;
+            setTimeout(() => statusBar.style.display = 'none', 3000);
+        }
     } else {
         console.log('[deleteNote] 用户取消了删除操作');
+        // 如果用户取消删除，重新打开笔记详情页
+        if (modal) {
+            setTimeout(() => {
+                openFullNote(noteId);
+            }, 100);
+        }
     }
 }
 
