@@ -1176,11 +1176,7 @@ async function updateSyncStats() {
         console.error('[updateSyncStats] 获取服务器笔记数量失败:', error);
     }
     
-    // 更新最后同步时间
-    const lastSyncDisplay = document.getElementById('last-sync-display');
-    if (lastSyncDisplay) {
-        lastSyncDisplay.textContent = syncManager.getLastSync() || '从未同步';
-    }
+
 }
 
 // 立即同步数据（兼容旧版）
@@ -2891,23 +2887,6 @@ function saveServerUrl() {
 
 // 更新设备信息显示
 function updateDeviceInfoDisplay() {
-    // 显示设备ID
-    const deviceIdDisplay = document.getElementById('device-id-display');
-    if (deviceIdDisplay && syncManager) {
-        deviceIdDisplay.textContent = syncManager.getDeviceId();
-    }
-    
-    // 显示最后同步时间
-    const lastSyncDisplay = document.getElementById('last-sync-display');
-    if (lastSyncDisplay && syncManager) {
-        const lastSyncTime = syncManager.getLastSync();
-        if (lastSyncTime) {
-            lastSyncDisplay.textContent = new Date(lastSyncTime).toLocaleString('zh-CN');
-        } else {
-            lastSyncDisplay.textContent = '从未同步';
-        }
-    }
-    
     // 设置服务器URL输入框的值
     const serverUrlInput = document.getElementById('server-url');
     if (serverUrlInput && syncManager) {

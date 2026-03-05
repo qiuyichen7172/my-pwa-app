@@ -37,30 +37,93 @@ app.use((req, res, next) => {
     next();
 });
 
-// 初始化数据文件
+// 初始化数据文件 - 只在服务器启动时调用一次
 function initDataFile() {
-    if (!fs.existsSync(DATA_FILE)) {
-        const initialData = {
+    try {
+        if (!fs.existsSync(DATA_FILE)) {
+            const initialData = {
+                notes: [],
+                albums: [],
+                devices: [],
+                deletedNotes: [],
+                lastUpdate: new Date().toISOString()
+            };
+            fs.writeFileSync(DATA_FILE, JSON.stringify(initialData, null, 2));
+            console.log('[initDataFile] 初始化数据文件成功:', DATA_FILE);
+            return initialData;
+        } else {
+            // 读取现有数据
+            const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+            
+            // 确保所有必要字段存在
+            const normalizedData = {
+                notes: Array.isArray(data.notes) ? data.notes : [],
+                albums: Array.isArray(data.albums) ? data.albums : [],
+                devices: Array.isArray(data.devices) ? data.devices : [],
+                deletedNotes: Array.isArray(data.deletedNotes) ? data.deletedNotes : [],
+                lastUpdate: data.lastUpdate || new Date().toISOString()
+            };
+            
+            // 只有在数据有变化时才写入文件
+            if (JSON.stringify(data) !== JSON.stringify(normalizedData)) {
+                fs.writeFileSync(DATA_FILE, JSON.stringify(normalizedData, null, 2));
+                console.log('[initDataFile] 数据文件已标准化');
+            }
+            
+            return normalizedData;
+        }
+    } catch (error) {
+        console.error('[initDataFile] 处理数据文件失败:', error);
+        // 返回默认数据结构
+        return {
             notes: [],
             albums: [],
             devices: [],
             deletedNotes: [],
             lastUpdate: new Date().toISOString()
         };
-        fs.writeFileSync(DATA_FILE, JSON.stringify(initialData, null, 2));
-        console.log('[initDataFile] 初始化数据文件成功:', DATA_FILE);
-    } else {
-        // 如果文件存在但没有 deletedNotes 字段，添加它
-        try {
-            const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-            if (!data.deletedNotes) {
-                data.deletedNotes = [];
-                fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
-                console.log('[initDataFile] 添加 deletedNotes 字段');
-            }
-        } catch (error) {
-            console.error('[initDataFile] 检查数据文件失败:', error);
-        }
+    }
+}
+
+// 读取数据文件 - 用于API端点
+function readDataFile() {
+    try {
+        const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+        return {
+            notes: Array.isArray(data.notes) ? data.notes : [],
+            albums: Array.isArray(data.albums) ? data.albums : [],
+            devices: Array.isArray(data.devices) ? data.devices : [],
+            deletedNotes: Array.isArray(data.deletedNotes) ? data.deletedNotes : [],
+            lastUpdate: data.lastUpdate || new Date().toISOString()
+        };
+    } catch (error) {
+        console.error('[readDataFile] 读取数据失败:', error);
+        return {
+            notes: [],
+            albums: [],
+            devices: [],
+            deletedNotes: [],
+            lastUpdate: new Date().toISOString()
+        };
+    }
+}
+
+// 写入数据文件 - 用于API端点
+function writeDataFile(data) {
+    try {
+        const normalizedData = {
+            notes: Array.isArray(data.notes) ? data.notes : [],
+            albums: Array.isArray(data.albums) ? data.albums : [],
+            devices: Array.isArray(data.devices) ? data.devices : [],
+            deletedNotes: Array.isArray(data.deletedNotes) ? data.deletedNotes : [],
+            lastUpdate: new Date().toISOString()
+        };
+        
+        fs.writeFileSync(DATA_FILE, JSON.stringify(normalizedData, null, 2));
+        return true;
+    } catch (error) {
+        console.error('[writeDataFile] 写入数据失败:', error);
+        return false;
     }
 }
 
@@ -78,10 +141,8 @@ app.get('/ping', (req, res) => {
 app.get('/data', (req, res) => {
     console.log('[get-data] 收到获取数据请求');
     
-    initDataFile();
-    
     try {
-        const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+        const data = readDataFile();
         console.log(`[get-data] 返回数据：${data.notes?.length} 条笔记，${data.albums?.length} 个相册`);
         res.json(data);
     } catch (error) {
@@ -118,11 +179,9 @@ app.post('/sync', (req, res) => {
     
     console.log(`[sync] 处理来自设备 ${deviceId} 的 ${queue.length} 条同步记录`);
     
-    initDataFile();
-    
     try {
         // 读取现有数据
-        const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+        const data = readDataFile();
         
         // 处理同步队列
         let processedCount = 0;
@@ -245,10 +304,8 @@ function processAlbumSync(data, item, deviceId) {
 app.get('/notes.json', (req, res) => {
     console.log('[GET /notes.json] 收到获取所有笔记请求');
     
-    initDataFile();
-    
     try {
-        const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+        const data = readDataFile();
         res.json(data.notes || []);
         console.log(`[GET /notes.json] 返回 ${data.notes?.length || 0} 条笔记`);
     } catch (error) {
@@ -274,26 +331,31 @@ app.put('/notes.json', (req, res) => {
         });
     }
     
-    initDataFile();
-    
     try {
         // 读取现有数据
-        const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+        const data = readDataFile();
         
         // 更新笔记数据
         data.notes = notes;
-        data.lastUpdate = new Date().toISOString();
         
         // 保存数据
-        fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+        const success = writeDataFile(data);
         
-        console.log(`[PUT /notes.json] 保存成功，共 ${notes.length} 条笔记`);
-        res.json({ 
-            success: true, 
-            message: `保存了${notes.length}条笔记`,
-            lastUpdate: data.lastUpdate,
-            totalNotes: notes.length
-        });
+        if (success) {
+            console.log(`[PUT /notes.json] 保存成功，共 ${notes.length} 条笔记`);
+            res.json({ 
+                success: true, 
+                message: `保存了${notes.length}条笔记`,
+                lastUpdate: data.lastUpdate,
+                totalNotes: notes.length
+            });
+        } else {
+            console.error('[PUT /notes.json] 保存数据失败');
+            res.status(500).json({ 
+                error: '保存数据失败',
+                message: '无法保存笔记数据' 
+            });
+        }
     } catch (error) {
         console.error('[PUT /notes.json] 保存数据失败:', error);
         res.status(500).json({ 
@@ -316,11 +378,9 @@ app.get('/notes/:noteId', (req, res) => {
         });
     }
     
-    initDataFile();
-    
     try {
         // 读取现有数据
-        const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+        const data = readDataFile();
         
         // 查找笔记
         const note = data.notes?.find(note => note.id === noteId);
@@ -356,21 +416,14 @@ app.delete('/notes/:noteId', (req, res) => {
         });
     }
     
-    initDataFile();
-    
     try {
         // 读取现有数据
-        const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+        const data = readDataFile();
         
         // 过滤掉要删除的笔记
         const originalCount = data.notes?.length || 0;
         data.notes = data.notes?.filter(note => note.id !== noteId) || [];
         const newCount = data.notes.length;
-        
-        // 添加到已删除笔记列表（包含删除时间戳，用于自动清理）
-        if (!data.deletedNotes) {
-            data.deletedNotes = [];
-        }
         
         // 检查是否已存在，避免重复添加
         const existingIndex = data.deletedNotes.findIndex(item => item.id === noteId);
@@ -381,21 +434,26 @@ app.delete('/notes/:noteId', (req, res) => {
             });
         }
         
-        // 更新最后更新时间
-        data.lastUpdate = new Date().toISOString();
-        
         // 保存数据
-        fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+        const success = writeDataFile(data);
         
-        console.log(`[DELETE /notes/:noteId] 删除成功，删除了 ${originalCount - newCount} 条笔记，已添加到删除记录`);
-        res.json({ 
-            success: true, 
-            message: `成功删除笔记: ${noteId}`,
-            lastUpdate: data.lastUpdate,
-            totalNotes: newCount,
-            deletedCount: originalCount - newCount,
-            deletedNotesCount: data.deletedNotes.length
-        });
+        if (success) {
+            console.log(`[DELETE /notes/:noteId] 删除成功，删除了 ${originalCount - newCount} 条笔记，已添加到删除记录`);
+            res.json({ 
+                success: true, 
+                message: `成功删除笔记: ${noteId}`,
+                lastUpdate: data.lastUpdate,
+                totalNotes: newCount,
+                deletedCount: originalCount - newCount,
+                deletedNotesCount: data.deletedNotes.length
+            });
+        } else {
+            console.error('[DELETE /notes/:noteId] 删除数据失败');
+            res.status(500).json({ 
+                error: '删除数据失败',
+                message: '无法删除笔记数据' 
+            });
+        }
     } catch (error) {
         console.error('[DELETE /notes/:noteId] 删除数据失败:', error);
         res.status(500).json({ 
@@ -411,10 +469,8 @@ app.delete('/notes/:noteId', (req, res) => {
 app.get('/deleted-notes.json', (req, res) => {
     console.log('[GET /deleted-notes.json] 收到获取已删除笔记列表请求');
     
-    initDataFile();
-    
     try {
-        const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+        const data = readDataFile();
         res.json(data.deletedNotes || []);
         console.log(`[GET /deleted-notes.json] 返回 ${data.deletedNotes?.length || 0} 条删除记录`);
     } catch (error) {
@@ -440,17 +496,11 @@ app.put('/deleted-notes.json', (req, res) => {
         });
     }
     
-    initDataFile();
-    
     try {
         // 读取现有数据
-        const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+        const data = readDataFile();
         
         // 合并删除记录（去重）
-        if (!data.deletedNotes) {
-            data.deletedNotes = [];
-        }
-        
         const existingIds = new Set(data.deletedNotes.map(item => item.id));
         deletedNotes.forEach(item => {
             if (!existingIds.has(item.id)) {
@@ -472,20 +522,25 @@ app.put('/deleted-notes.json', (req, res) => {
             console.log(`[PUT /deleted-notes.json] 自动清理了 ${beforeClean - afterClean} 条过期删除记录`);
         }
         
-        // 更新最后更新时间
-        data.lastUpdate = new Date().toISOString();
-        
         // 保存数据
-        fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+        const success = writeDataFile(data);
         
-        console.log(`[PUT /deleted-notes.json] 同步成功，共 ${data.deletedNotes.length} 条删除记录`);
-        res.json({ 
-            success: true, 
-            message: `同步了${deletedNotes.length}条删除记录`,
-            lastUpdate: data.lastUpdate,
-            totalDeletedNotes: data.deletedNotes.length,
-            cleanedCount: beforeClean - afterClean
-        });
+        if (success) {
+            console.log(`[PUT /deleted-notes.json] 同步成功，共 ${data.deletedNotes.length} 条删除记录`);
+            res.json({ 
+                success: true, 
+                message: `同步了${deletedNotes.length}条删除记录`,
+                lastUpdate: data.lastUpdate,
+                totalDeletedNotes: data.deletedNotes.length,
+                cleanedCount: beforeClean - afterClean
+            });
+        } else {
+            console.error('[PUT /deleted-notes.json] 同步失败');
+            res.status(500).json({ 
+                error: '同步失败',
+                message: '无法同步删除记录' 
+            });
+        }
     } catch (error) {
         console.error('[PUT /deleted-notes.json] 同步失败:', error);
         res.status(500).json({ 
